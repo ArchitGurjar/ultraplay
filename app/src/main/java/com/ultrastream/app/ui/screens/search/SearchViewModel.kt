@@ -43,7 +43,7 @@ class SearchViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(results = emptyList(), isSearching = false)
     }
 
-    @Stable data class SearchUiState(
+    data class SearchUiState(
         val isSearching: Boolean = false,
         val results: List<MetaItem> = emptyList(),
         val error: String? = null

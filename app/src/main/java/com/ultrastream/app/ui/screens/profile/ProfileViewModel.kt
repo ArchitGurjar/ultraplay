@@ -164,7 +164,7 @@ class ProfileViewModel @Inject constructor(
         _uiState.value = ProfileUiState()
     }
 
-    @Stable data class ProfileUiState(
+    data class ProfileUiState(
         val theme: String = "dark",
         val hindiPriority: Boolean = true,
         val autoPlayNext: Boolean = false,
