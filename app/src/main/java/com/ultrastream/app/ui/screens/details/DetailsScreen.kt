@@ -66,7 +66,6 @@ fun DetailsScreen(
     var showSubtitlesSheet by remember { mutableStateOf(false) }
     var selectedStream by remember { mutableStateOf<StreamItem?>(null) }
     var subtitlesList by remember { mutableStateOf<List<Subtitle>>(emptyList()) }
-    // ✅ FIX: add streamsRequested flag
     var streamsRequested by remember { mutableStateOf(false) }
 
     val meta = uiState.meta
@@ -89,7 +88,6 @@ fun DetailsScreen(
         }
     }
 
-    // ✅ FIX: open streams sheet only after loading finishes
     LaunchedEffect(uiState.streamsLoading, streamsRequested) {
         if (!uiState.streamsLoading && streamsRequested && uiState.streams.isNotEmpty()) {
             showStreamsSheet = true
@@ -227,7 +225,6 @@ fun DetailsScreen(
                                 Button(
                                     onClick = {
                                         viewModel.loadStreams(meta.id, meta.type, null, null)
-                                        // ✅ FIX: use streamsRequested instead of directly opening sheet
                                         streamsRequested = true
                                     },
                                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -317,7 +314,6 @@ fun DetailsScreen(
                                     video = video,
                                     isWatched = isWatched,
                                     progressPercent = progressPercent,
-                                    // ✅ FIX: null-safe onClick with streamsRequested
                                     onClick = {
                                         val currentMeta = uiState.meta
                                         if (currentMeta != null) {
@@ -353,7 +349,7 @@ fun DetailsScreen(
             streams = uiState.streams,
             onDismiss = {
                 showStreamsSheet = false
-                streamsRequested = false // reset flag
+                streamsRequested = false
             },
             onStreamClick = { stream ->
                 showStreamsSheet = false
@@ -375,7 +371,8 @@ fun DetailsScreen(
                     onClick = {
                         showActionSheet = false
                         viewModel.playStream(stream, title) { resolved, t ->
-                            SubtitleHolder.selectedSubtitle = sub; onPlay(resolved, t)
+                            // Subtitle will be handled separately via SubtitleHolder
+                            onPlay(resolved, t)
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -384,7 +381,7 @@ fun DetailsScreen(
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Play in Default Player", fontWeight = FontWeight.Bold)
+                    Text("Play", fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

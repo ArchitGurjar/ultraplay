@@ -8,6 +8,7 @@ import com.ultrastream.app.network.StremioApi
 import com.ultrastream.app.utils.DebridHelper
 import com.ultrastream.app.utils.LinkVerifier
 import com.ultrastream.app.utils.StreamParser
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope

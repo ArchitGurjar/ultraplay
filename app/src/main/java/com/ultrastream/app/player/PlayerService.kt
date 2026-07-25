@@ -48,7 +48,7 @@ class PlayerService : MediaSessionService() {
         val notification = NotificationCompat.Builder(this, "player_channel")
             .setContentTitle("UltraStream")
             .setContentText("Playing...")
-            .setSmallIcon(R.drawable.ic_notification) // Replace with your icon if needed
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -66,6 +66,7 @@ class PlayerService : MediaSessionService() {
                 "ACTION_PLAY" -> player?.play()
                 "ACTION_PAUSE" -> player?.pause()
                 "ACTION_STOP" -> stopSelf()
+                else -> { /* do nothing */ }   // ✅ exhaustive
             }
         }
         return START_STICKY
