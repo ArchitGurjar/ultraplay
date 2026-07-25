@@ -104,7 +104,8 @@ fun HomeScreen(
             }
         } else {
             uiState.catalogRows.forEach { (rowId, items) ->
-                item {
+                item(key = rowId) {
+                item(key = rowId) {
                     val parts = rowId.split("_")
                     val displayName = when {
                         parts.size >= 3 -> {
