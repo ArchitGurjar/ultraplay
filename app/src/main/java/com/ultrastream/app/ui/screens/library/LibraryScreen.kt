@@ -12,6 +12,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ultrastream.app.data.models.MetaItem
 import com.ultrastream.app.data.models.PlaylistEpisode
 import com.ultrastream.app.data.models.SmartPlaylist
+import com.ultrastream.app.data.models.StreamItem
 import com.ultrastream.app.ui.components.GridSection
 import com.ultrastream.app.ui.components.HScrollRow
 import com.ultrastream.app.ui.components.SectionHeader
@@ -22,9 +23,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
-    onItemClick: (id: String, type: String) -> Unit
+    onItemClick: (id: String, type: String) -> Unit,
+    onPlayStream: (StreamItem, String) -> Unit   // ✅ added parameter
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var selectedPlaylist by remember { mutableStateOf<SmartPlaylist?>(null) }
+    var showPlaylistDetail by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     // ✅ Observe playStream and navigate
     LaunchedEffect(uiState.playStream) {
         uiState.playStream?.let { (stream, title) ->
@@ -32,9 +38,6 @@ fun LibraryScreen(
             viewModel.clearPlayStream()
         }
     }
-    var selectedPlaylist by remember { mutableStateOf<SmartPlaylist?>(null) }
-    var showPlaylistDetail by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -62,14 +65,10 @@ fun LibraryScreen(
                                     showPlaylistDetail = true
                                 },
                                 onExportM3u = { pl ->
-                                    scope.launch {
-                                        viewModel.exportPlaylistM3U(pl)
-                                    }
+                                    scope.launch { viewModel.exportPlaylistM3U(pl) }
                                 },
                                 onPlayAll = { pl ->
-                                    scope.launch {
-                                        viewModel.playAll(pl)
-                                    }
+                                    scope.launch { viewModel.playAll(pl) }
                                 }
                             )
                         }
