@@ -94,13 +94,10 @@ fun DetailsScreen(
         episodesLoading = filteredEpisodes.isEmpty()
     }
 
+    // ✅ Always open sheet when streams are loaded, even if empty
     LaunchedEffect(uiState.streamsLoading, streamsRequested) {
         if (!uiState.streamsLoading && streamsRequested) {
-            if (uiState.streams.isNotEmpty()) {
-                showStreamsSheet = true
-            } else {
-                Toast.makeText(context, "No streams available. Install Torrentio from Addons.", Toast.LENGTH_LONG).show()
-            }
+            showStreamsSheet = true
         }
     }
 
@@ -360,7 +357,7 @@ fun DetailsScreen(
         }
     }
 
-    // ✅ Streams Sheet – empty state
+    // ✅ Streams Sheet – always opens, shows empty state if needed
     if (showStreamsSheet) {
         if (uiState.streams.isNotEmpty()) {
             StreamsSheet(
@@ -376,7 +373,7 @@ fun DetailsScreen(
                 }
             )
         } else {
-            // Show empty state sheet
+            // Empty state sheet
             ModalBottomSheet(
                 onDismissRequest = {
                     showStreamsSheet = false
@@ -420,11 +417,138 @@ fun DetailsScreen(
         }
     }
 
-    // Action Sheet, Subtitles Sheet, Seasons Sheet (unchanged – keep your existing code)
-    // If you had them, they remain. I'll include them for completeness.
-    // Since they are long, I'll assume they are already present in your file.
-    // The above file keeps everything; just ensure you have the rest.
-    // For safety, I'll append the rest of the original actions, but I know they are there.
+    // Action Sheet (Stream Actions)
+    if (showActionSheet && selectedStream != null) {
+        val stream = selectedStream!!
+        val title = meta?.name ?: "Stream"
+        ModalBottomSheet(onDismissRequest = { showActionSheet = false }) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Text("Stream Options", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+
+                Button(
+                    onClick = {
+                        showActionSheet = false
+                        viewModel.playStream(stream, title) { resolved, t ->
+                            onPlay(resolved, t)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Play", fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val actions = mutableListOf<Pair<String, () -> Unit>>()
+
+                if (uiState.selectedEpisode != null && uiState.selectedSeason != null && isSeries && meta != null) {
+                    actions.add("Make Smart Playlist" to {
+                        scope.launch {
+                            val success = viewModel.createSmartPlaylist(meta, uiState.selectedSeason!!)
+                            if (success) Toast.makeText(context, "Smart Playlist created!", Toast.LENGTH_SHORT).show()
+                            else Toast.makeText(context, "Failed to create playlist", Toast.LENGTH_SHORT).show()
+                        }
+                    })
+                }
+
+                actions.addAll(listOf(
+                    "Search Subtitles" to {
+                        scope.launch {
+                            if (uiState.selectedSeason != null && uiState.selectedEpisode != null && isSeries && meta != null) {
+                                val subs = viewModel.fetchSubtitles(meta.id, meta.type, uiState.selectedSeason!!, uiState.selectedEpisode!!)
+                                if (subs.isNotEmpty()) {
+                                    subtitlesList = subs
+                                    showSubtitlesSheet = true
+                                    showActionSheet = false
+                                } else {
+                                    Toast.makeText(context, "No subtitles available", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "Select an episode first", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    "Open in Browser" to {
+                        val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
+                        if (!url.isNullOrBlank()) {
+                            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Open with"))
+                        } else Toast.makeText(context, "No URL available", Toast.LENGTH_SHORT).show()
+                    },
+                    "Copy Magnet Link" to {
+                        val magnet = if (stream.url?.startsWith("magnet:") == true) stream.url
+                        else if (stream.infoHash != null) "magnet:?xt=urn:btih:${stream.infoHash}" else null
+                        if (magnet != null) {
+                            clipboard.setText(AnnotatedString(magnet))
+                            Toast.makeText(context, "Magnet copied to clipboard", Toast.LENGTH_SHORT).show()
+                        } else Toast.makeText(context, "No magnet link available", Toast.LENGTH_SHORT).show()
+                    },
+                    "Export .m3u" to {
+                        val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
+                        if (!url.isNullOrBlank() && !url.startsWith("magnet:")) {
+                            val exporter = M3UExporter(context)
+                            val file = exporter.exportToM3U(listOf(stream), title)
+                            if (file != null) exporter.shareM3U(file)
+                            else Toast.makeText(context, "Failed to create M3U", Toast.LENGTH_SHORT).show()
+                        } else Toast.makeText(context, "Cannot export magnet or empty URL", Toast.LENGTH_SHORT).show()
+                    }
+                ))
+
+                actions.chunked(2).forEach { row ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { (label, action) ->
+                            OutlinedButton(
+                                onClick = {
+                                    action()
+                                    showActionSheet = false
+                                },
+                                modifier = Modifier.weight(1f).height(48.dp)
+                            ) {
+                                Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+
+    // Subtitles Sheet
+    if (showSubtitlesSheet && subtitlesList.isNotEmpty()) {
+        SubtitlesSheet(
+            subtitles = subtitlesList,
+            onDismiss = { showSubtitlesSheet = false },
+            onSubtitleSelected = { sub ->
+                showSubtitlesSheet = false
+                SubtitleHolder.selectedSubtitle = sub
+                scope.launch { SubtitleEvent.emit(sub) }
+                if (selectedStream != null && meta != null) {
+                    onPlay(selectedStream!!, meta.name)
+                } else {
+                    Toast.makeText(context, "No stream to play with subtitle", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+
+    // Seasons Sheet
+    if (showSeasonsSheet) {
+        val seasons = meta?.videos?.mapNotNull { it.season }?.distinct()?.sorted() ?: emptyList()
+        SeasonsSheet(
+            seasons = seasons,
+            currentSeason = uiState.selectedSeason ?: 0,
+            onDismiss = { showSeasonsSheet = false },
+            onSeasonSelected = { season ->
+                viewModel.selectSeason(season)
+                showSeasonsSheet = false
+            }
+        )
+    }
 }
 
 // ✅ Skeleton Episode Card
