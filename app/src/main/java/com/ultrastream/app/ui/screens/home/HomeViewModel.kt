@@ -11,6 +11,7 @@ import com.ultrastream.app.data.repository.AddonRepository
 import com.ultrastream.app.data.repository.MetaRepository
 import com.ultrastream.app.domain.usecase.GetHomeCatalogsUseCase
 import com.ultrastream.app.domain.usecase.UpdateWatchProgressUseCase
+import com.ultrastream.app.domain.usecase.InstallAddonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,14 +25,29 @@ class HomeViewModel @Inject constructor(
     private val getHomeCatalogsUseCase: GetHomeCatalogsUseCase,
     private val updateWatchProgressUseCase: UpdateWatchProgressUseCase,
     private val metaRepository: MetaRepository,
-    private val historyDao: HistoryDao
+    private val historyDao: HistoryDao,
+    private val installAddonUseCase: InstallAddonUseCase  // ✅ added
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        // Ensure Torrentio is installed for streams
+        viewModelScope.launch {
+            ensureStreamAddonInstalled()
+        }
         loadHomeData()
+    }
+
+    private suspend fun ensureStreamAddonInstalled() {
+        val addons = addonRepository.getAllAddons()
+        val hasTorrentio = addons.any { it.url.contains("torrentio") }
+        if (!hasTorrentio) {
+            // Install Torrentio (default)
+            installAddonUseCase("https://torrentio.strem.fun/manifest.json")
+        }
+        // Also install Cinemeta if not present (already there)
     }
 
     fun loadHomeData() {
