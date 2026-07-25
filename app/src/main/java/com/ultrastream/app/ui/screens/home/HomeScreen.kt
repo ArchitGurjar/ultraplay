@@ -11,12 +11,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ultrastream.app.data.models.MetaItem  // ✅ Added
+import com.ultrastream.app.data.models.MetaItem
 import com.ultrastream.app.ui.components.ContinueWatchingCard
 import com.ultrastream.app.ui.components.HScrollRow
 import com.ultrastream.app.ui.components.PosterCard
 import com.ultrastream.app.ui.components.RecommendedAddonCard
 import com.ultrastream.app.ui.components.SectionHeader
+import com.ultrastream.app.ui.components.SkeletonPosterCard
 
 @Composable
 fun HomeScreen(
@@ -30,10 +31,14 @@ fun HomeScreen(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
-        // Continue Watching
+        // Continue Watching with skeleton
         item {
             SectionHeader(title = "Continue Watching")
-            if (uiState.continueWatching.isEmpty()) {
+            if (uiState.isLoading) {
+                HScrollRow {
+                    repeat(3) { SkeletonContinueWatchingCard() }
+                }
+            } else if (uiState.continueWatching.isEmpty()) {
                 Text("No history yet", modifier = Modifier.padding(horizontal = 16.dp))
             } else {
                 HScrollRow {
@@ -48,7 +53,7 @@ fun HomeScreen(
             }
         }
 
-        // ✅ RECOMMENDATIONS (Because you watched)
+        // Recommendations (Because you watched)
         if (uiState.recommendations.isNotEmpty()) {
             item {
                 SectionHeader(title = "🎯 Because you watched")
@@ -63,10 +68,14 @@ fun HomeScreen(
             }
         }
 
-        // Recommended Addons (keep)
+        // Recommended Addons
         item {
             SectionHeader(title = "Recommended Addons")
-            if (uiState.recommendedAddons.isEmpty()) {
+            if (uiState.isLoading) {
+                HScrollRow {
+                    repeat(2) { SkeletonRecommendedAddonCard() }
+                }
+            } else if (uiState.recommendedAddons.isEmpty()) {
                 Text("No recommendations", modifier = Modifier.padding(horizontal = 16.dp))
             } else {
                 HScrollRow {
@@ -82,11 +91,15 @@ fun HomeScreen(
             }
         }
 
-        // Catalog rows with See All
+        // Catalog rows with See All and skeletons
         if (uiState.isLoading) {
-            item {
-                Box(modifier = Modifier.fillParentMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                    CircularProgressIndicator()
+            // Show 3 skeleton catalog rows
+            repeat(3) {
+                item {
+                    SectionHeader(title = "Loading...")
+                    HScrollRow {
+                        repeat(4) { SkeletonPosterCard() }
+                    }
                 }
             }
         } else {
@@ -116,6 +129,24 @@ fun HomeScreen(
                                     onClick = { onItemClick(meta.id, meta.type) }
                                 )
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If error, show retry
+        if (uiState.error != null) {
+            item {
+                Box(
+                    modifier = Modifier.fillParentMaxWidth().padding(16.dp),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = { viewModel.refresh() }) {
+                            Text("Retry")
                         }
                     }
                 }

@@ -26,7 +26,7 @@ class HomeViewModel @Inject constructor(
     private val updateWatchProgressUseCase: UpdateWatchProgressUseCase,
     private val metaRepository: MetaRepository,
     private val historyDao: HistoryDao,
-    private val installAddonUseCase: InstallAddonUseCase  // ✅ added
+    private val installAddonUseCase: InstallAddonUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -35,8 +35,8 @@ class HomeViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             ensureStreamAddonInstalled()
+            loadHomeData()
         }
-        loadHomeData()
     }
 
     private suspend fun ensureStreamAddonInstalled(retries: Int = 3) {
@@ -53,6 +53,8 @@ class HomeViewModel @Inject constructor(
                 attempt++
             }
         }
+        // If still not installed, force refresh addons list
+        addonRepository.getAllAddons()
     }
 
     fun loadHomeData() {
