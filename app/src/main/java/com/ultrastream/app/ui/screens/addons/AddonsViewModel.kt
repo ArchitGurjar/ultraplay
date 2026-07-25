@@ -125,7 +125,7 @@ class AddonsViewModel @Inject constructor(
         }
     }
 
-    data class AddonsUiState(
+    @Stable data class AddonsUiState(
         val addons: List<Addon> = emptyList(),
         val debridKey: String = "",
         val debridProvider: String = "realdebrid"

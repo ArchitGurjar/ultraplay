@@ -240,7 +240,7 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    data class LibraryUiState(
+    @Stable data class LibraryUiState(
         val isLoading: Boolean = false,
         val library: List<LibraryItem> = emptyList(),
         val watchlist: List<WatchlistItem> = emptyList(),

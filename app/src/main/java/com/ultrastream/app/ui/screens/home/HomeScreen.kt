@@ -32,7 +32,7 @@ fun HomeScreen(
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
         // Continue Watching with skeleton
-        item {
+        item(key = "continue_watching") {
             SectionHeader(title = "Continue Watching")
             if (uiState.isLoading) {
                 HScrollRow {
@@ -55,7 +55,7 @@ fun HomeScreen(
 
         // Recommendations (Because you watched)
         if (uiState.recommendations.isNotEmpty()) {
-            item {
+            item(key = "recommendations") {
                 SectionHeader(title = "🎯 Because you watched")
                 HScrollRow {
                     uiState.recommendations.forEach { meta ->
@@ -69,7 +69,7 @@ fun HomeScreen(
         }
 
         // Recommended Addons
-        item {
+        item(key = "recommended_addons") {
             SectionHeader(title = "Recommended Addons")
             if (uiState.isLoading) {
                 HScrollRow {

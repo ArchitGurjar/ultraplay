@@ -210,7 +210,7 @@ class DetailsViewModel @Inject constructor(
         updateWatchProgressUseCase.addToHistory(metaId, type, name, poster)
     }
 
-    data class DetailsUiState(
+    @Stable data class DetailsUiState(
         val isLoading: Boolean = false,
         val meta: MetaItem? = null,
         val inLibrary: Boolean = false,

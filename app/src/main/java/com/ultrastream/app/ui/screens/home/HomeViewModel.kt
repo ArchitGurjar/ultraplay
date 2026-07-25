@@ -109,7 +109,7 @@ class HomeViewModel @Inject constructor(
 
     fun refresh() = loadHomeData()
 
-    data class HomeUiState(
+    @Stable data class HomeUiState(
         val isLoading: Boolean = false,
         val addons: List<Addon> = emptyList(),
         val continueWatching: List<Pair<HistoryItem, Int>> = emptyList(),
