@@ -4,7 +4,9 @@ import android.util.Log
 import com.ultrastream.app.network.AllDebridApi
 import com.ultrastream.app.network.PremiumizeApi
 import com.ultrastream.app.network.RealDebridApi
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,10 +21,6 @@ class DebridHelper @Inject constructor(
 
     enum class DebridProvider {
         REAL_DEBRID, ALL_DEBRID, PREMIUMIZE
-    }
-
-    enum class DebridStatus {
-        NOT_CONFIGURED, ACTIVE, EXPIRED, INVALID
     }
 
     suspend fun resolveStreamUrl(
@@ -47,10 +45,8 @@ class DebridHelper @Inject constructor(
         }
     }
 
-    // =========================== REAL-DEBRID ===========================
     private suspend fun resolveRealDebrid(url: String, apiKey: String): String {
         val auth = "Bearer $apiKey"
-
         return if (url.startsWith("magnet:")) {
             resolveRealDebridMagnet(url, auth)
         } else if (url.matches(Regex("^[a-fA-F0-9]{40}$"))) {
@@ -67,7 +63,6 @@ class DebridHelper @Inject constructor(
             Log.d(TAG, "No valid hash in magnet, returning original")
             return magnet
         }
-
         return try {
             val availability = realDebridApi.checkInstantAvailability(auth, hash)
             if (availability.isNotEmpty()) {
@@ -78,7 +73,7 @@ class DebridHelper @Inject constructor(
                     realDebridApi.selectFiles(auth, torrentId, "all")
                     var status = realDebridApi.getTorrentStatus(auth, torrentId)
                     var attempts = 0
-                    while (status.status != "downloaded" && status.status != "ready" && attempts < 60) {
+                    while (attempts < 60 && currentCoroutineContext().isActive) {
                         delay(1000)
                         status = realDebridApi.getTorrentStatus(auth, torrentId)
                         attempts++
@@ -99,7 +94,6 @@ class DebridHelper @Inject constructor(
         }
     }
 
-    // =========================== ALL-DEBRID ===========================
     private suspend fun resolveAllDebrid(url: String, apiKey: String): String {
         return if (url.startsWith("magnet:")) {
             resolveAllDebridMagnet(url, apiKey)
@@ -117,7 +111,6 @@ class DebridHelper @Inject constructor(
             Log.d(TAG, "No valid hash in magnet, returning original")
             return magnet
         }
-
         return try {
             val uploadResponse = allDebridApi.uploadMagnet(apiKey, magnet)
             if (!uploadResponse.status || uploadResponse.data == null || uploadResponse.data.id.isEmpty()) {
@@ -125,10 +118,9 @@ class DebridHelper @Inject constructor(
                 return magnet
             }
             val torrentId = uploadResponse.data.id
-
             var statusResponse = allDebridApi.getMagnetStatus(apiKey, torrentId)
             var attempts = 0
-            while (attempts < 60) {
+            while (attempts < 60 && currentCoroutineContext().isActive) {
                 val magnets = statusResponse.data?.magnets ?: emptyList()
                 val first = magnets.firstOrNull()
                 if (first != null && first.status == "Completed") {
@@ -138,7 +130,6 @@ class DebridHelper @Inject constructor(
                 statusResponse = allDebridApi.getMagnetStatus(apiKey, torrentId)
                 attempts++
             }
-
             val magnetItem = statusResponse.data?.magnets?.firstOrNull()
             if (magnetItem != null && magnetItem.status == "Completed") {
                 val linkResponse = allDebridApi.getMagnetLink(apiKey, torrentId)
@@ -153,7 +144,6 @@ class DebridHelper @Inject constructor(
         }
     }
 
-    // =========================== PREMIUMIZE ===========================
     private suspend fun resolvePremiumize(url: String, apiKey: String): String {
         return if (url.startsWith("magnet:")) {
             resolvePremiumizeMagnet(url, apiKey)
@@ -171,7 +161,6 @@ class DebridHelper @Inject constructor(
             Log.d(TAG, "No valid hash in magnet, returning original")
             return magnet
         }
-
         return try {
             val transferResponse = premiumizeApi.createTransfer(apiKey, magnet)
             if (transferResponse.status != "success" || transferResponse.id.isEmpty()) {
@@ -179,10 +168,9 @@ class DebridHelper @Inject constructor(
                 return magnet
             }
             val transferId = transferResponse.id
-
             var statusResponse = premiumizeApi.getTransferStatus(apiKey, transferId)
             var attempts = 0
-            while (attempts < 60) {
+            while (attempts < 60 && currentCoroutineContext().isActive) {
                 val transfers = statusResponse.transfers ?: emptyList()
                 val first = transfers.firstOrNull()
                 if (first != null && first.status == "finished") {
@@ -192,7 +180,6 @@ class DebridHelper @Inject constructor(
                 statusResponse = premiumizeApi.getTransferStatus(apiKey, transferId)
                 attempts++
             }
-
             val transferItem = statusResponse.transfers?.firstOrNull()
             if (transferItem != null && transferItem.status == "finished") {
                 val itemResponse = premiumizeApi.getItemDetails(apiKey, transferId)
@@ -207,7 +194,6 @@ class DebridHelper @Inject constructor(
         }
     }
 
-    // =========================== HELPERS ===========================
     private fun extractHash(magnet: String): String {
         val match = Regex("btih:([a-fA-F0-9]{40})").find(magnet)
         return match?.groupValues?.get(1) ?: ""
@@ -217,14 +203,6 @@ class DebridHelper @Inject constructor(
         if (debridKey.isBlank()) return url
         val separator = if (url.contains("?")) "&" else "?"
         return "$url${separator}realdebrid=$debridKey"
-    }
-
-    fun getDebridStatus(key: String): DebridStatus {
-        return when {
-            key.isBlank() -> DebridStatus.NOT_CONFIGURED
-            key.length < 20 -> DebridStatus.INVALID
-            else -> DebridStatus.ACTIVE
-        }
     }
 }
 

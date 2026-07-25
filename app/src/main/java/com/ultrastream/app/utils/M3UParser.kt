@@ -25,13 +25,16 @@ class M3UParser @Inject constructor() {
                 val logoMatch = Regex("tvg-logo=\"([^\"]*)\"").find(trimmed)
                 currentLogo = logoMatch?.groupValues?.get(1)
             } else if (!trimmed.startsWith("#")) {
-                if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("magnet:") || trimmed.startsWith("/")) {
-                    items.add(M3UItem(
-                        url = trimmed,
-                        title = currentTitle ?: "Unknown",
-                        group = currentGroup,
-                        logo = currentLogo
-                    ))
+                if (trimmed.startsWith("http://") || trimmed.startsWith("https://") ||
+                    trimmed.startsWith("magnet:") || trimmed.startsWith("/")) {
+                    items.add(
+                        M3UItem(
+                            url = trimmed,
+                            title = currentTitle ?: "Unknown",
+                            group = currentGroup,
+                            logo = currentLogo
+                        )
+                    )
                 }
                 currentTitle = null
                 currentGroup = null

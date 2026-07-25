@@ -36,3 +36,4 @@ interface SmartPlaylistDao {
     @Query("UPDATE smart_playlists SET fetched = :fetched WHERE id = :id")
     suspend fun updateFetched(id: String, fetched: Int)
 }
+

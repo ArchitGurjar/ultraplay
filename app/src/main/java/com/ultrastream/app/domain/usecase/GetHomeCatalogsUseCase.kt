@@ -84,3 +84,4 @@ class GetHomeCatalogsUseCase @Inject constructor(
         return catalogRows.toSortedMap(compareBy { it })
     }
 }
+

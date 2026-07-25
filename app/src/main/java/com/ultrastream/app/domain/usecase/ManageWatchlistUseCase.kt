@@ -42,3 +42,4 @@ class ManageWatchlistUseCase @Inject constructor(
 
     suspend fun getAllWatchlist(): List<WatchlistItem> = watchlistDao.getAll()
 }
+

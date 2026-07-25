@@ -127,3 +127,4 @@ class CreateSmartPlaylistUseCase @Inject constructor(
         return true
     }
 }
+

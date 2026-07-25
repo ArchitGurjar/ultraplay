@@ -34,8 +34,7 @@ fun SectionHeader(
                 text = actionText,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(start = 8.dp)
+                modifier = Modifier.padding(start = 8.dp)
             )
         }
     }

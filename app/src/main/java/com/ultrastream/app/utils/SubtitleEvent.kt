@@ -13,3 +13,4 @@ object SubtitleEvent {
         _events.emit(subtitle)
     }
 }
+

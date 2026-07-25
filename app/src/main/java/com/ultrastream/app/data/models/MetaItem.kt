@@ -17,7 +17,7 @@ data class LibraryItem(
     val description: String?,
     val genre: String?,
     val runtime: String?,
-    val cast: String?, // JSON string of List<String>
+    val cast: String?,
     val imdbId: String?,
     val timestamp: Long = System.currentTimeMillis()
 )
@@ -52,8 +52,8 @@ data class HistoryItem(
 
 @Entity(tableName = "cached_meta")
 data class CachedMeta(
-    @PrimaryKey val cacheKey: String, // e.g., "id_type"
-    val json: String // full meta JSON
+    @PrimaryKey val cacheKey: String,
+    val json: String
 )
 
 data class MetaItem(
@@ -81,6 +81,6 @@ data class Video(
     val title: String?,
     val description: String?,
     val thumbnail: String?,
-    val url: String? // trailer url etc.
+    val url: String?
 )
 

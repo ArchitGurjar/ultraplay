@@ -13,3 +13,4 @@ class GetMetaUseCase @Inject constructor(
         return metaRepository.getMeta(id, type)
     }
 }
+

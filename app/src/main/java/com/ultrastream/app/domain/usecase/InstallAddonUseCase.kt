@@ -25,3 +25,4 @@ class InstallAddonUseCase @Inject constructor(
         return addonRepository.installAddon(safeUrl)
     }
 }
+

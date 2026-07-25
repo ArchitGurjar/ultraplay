@@ -1,15 +1,9 @@
 package com.ultrastream.app.ui.screens.profile
 
-import android.content.ContentValues
-import android.content.Context
-import android.net.Uri
-import android.os.Build
-import android.provider.MediaStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.ultrastream.app.data.dao.*
+import com.ultrastream.app.data.models.Profile
 import com.ultrastream.app.data.preferences.PreferencesManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,9 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStream
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
@@ -37,6 +28,7 @@ class ProfileViewModel @Inject constructor(
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     init {
+        loadAnalytics()
         viewModelScope.launch {
             preferencesManager.getTheme().collect { theme ->
                 _uiState.value = _uiState.value.copy(theme = theme)
@@ -58,9 +50,51 @@ class ProfileViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            preferencesManager.getParentalRating().collect { rating ->
+                _uiState.value = _uiState.value.copy(parentalRating = rating)
+            }
+        }
+        viewModelScope.launch {
+            preferencesManager.getSubtitleLanguage().collect { lang ->
+                _uiState.value = _uiState.value.copy(subtitleLanguage = lang)
+            }
+        }
+        viewModelScope.launch {
             preferencesManager.getCurrentProfile().collect { profile ->
                 _uiState.value = _uiState.value.copy(currentProfile = profile)
             }
+        }
+        loadProfiles()
+    }
+
+    private fun loadAnalytics() {
+        viewModelScope.launch {
+            val library = libraryDao.getAll()
+            val watchlist = watchlistDao.getAll()
+            val history = historyDao.getAll()
+            val progressList = watchProgressDao.getAll()
+            val watchedCount = progressList.count { it.percent >= 100 }
+            val inProgressCount = progressList.count { it.percent in 1..99 }
+            val libraryCount = library.size
+            val watchlistCount = watchlist.size
+            val historyCount = history.size
+            val totalProgress = progressList.sumOf { it.percent.coerceIn(0, 100) }
+            val avgCompletion = if (progressList.isNotEmpty()) (totalProgress / progressList.size) else 0
+            _uiState.value = _uiState.value.copy(
+                watchedCount = watchedCount,
+                inProgressCount = inProgressCount,
+                libraryCount = libraryCount,
+                watchlistCount = watchlistCount,
+                historyCount = historyCount,
+                completionRate = avgCompletion
+            )
+        }
+    }
+
+    private fun loadProfiles() {
+        viewModelScope.launch {
+            val profiles = profileDao.getAll()
+            _uiState.value = _uiState.value.copy(profiles = profiles)
         }
     }
 
@@ -89,62 +123,37 @@ class ProfileViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(parentalControl = new)
     }
 
-    suspend fun exportData(context: Context): Boolean {
-        return try {
-            val data = buildExportData()
-            val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
-            val json = moshi.adapter(ExportData::class.java).toJson(data)
-            val fileName = "ultrastream_backup_${System.currentTimeMillis()}.json"
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val resolver = context.contentResolver
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "application/json")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Documents/UltraStream")
-                }
-                val uri = resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
-                uri?.let {
-                    resolver.openOutputStream(it)?.use { outputStream ->
-                        outputStream.write(json.toByteArray())
-                    }
-                    true
-                } ?: false
-            } else {
-                val file = File(context.getExternalFilesDir("backups"), fileName)
-                file.parentFile?.mkdirs()
-                file.writeText(json)
-                true
-            }
-        } catch (e: Exception) {
-            false
-        }
+    suspend fun setParentalRating(rating: String) {
+        preferencesManager.setParentalRating(rating)
+        _uiState.value = _uiState.value.copy(parentalRating = rating)
     }
 
-    suspend fun importData(context: Context, uri: Uri): Boolean {
-        return try {
-            val inputStream: InputStream = context.contentResolver.openInputStream(uri) ?: return false
-            val json = inputStream.bufferedReader().use { it.readText() }
-            val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
-            val data = moshi.adapter(ExportData::class.java).fromJson(json) ?: return false
-            libraryDao.deleteAll()
-            watchlistDao.deleteAll()
-            historyDao.deleteAll()
-            watchProgressDao.deleteAll()
-            addonDao.deleteAll()
-            profileDao.deleteAll()
-            libraryDao.insertAll(data.library)
-            watchlistDao.insertAll(data.watchlist)
-            historyDao.insertAll(data.history)
-            watchProgressDao.insertAll(data.watchProgress)
-            addonDao.insertAll(data.addons)
-            profileDao.insertAll(data.profiles)
-            true
-        } catch (e: Exception) {
-            false
-        }
+    suspend fun setSubtitleLanguage(language: String) {
+        preferencesManager.setSubtitleLanguage(language)
+        _uiState.value = _uiState.value.copy(subtitleLanguage = language)
     }
 
-    suspend fun factoryReset(context: Context) {
+    suspend fun switchProfile(profileId: String) {
+        preferencesManager.setCurrentProfile(profileId)
+        _uiState.value = _uiState.value.copy(currentProfile = profileId)
+    }
+
+    suspend fun createProfile(name: String) {
+        val id = name.lowercase().replace(" ", "_")
+        val profile = Profile(id = id, name = name, avatar = "")
+        profileDao.insert(profile)
+        loadProfiles()
+        switchProfile(id)
+    }
+
+    suspend fun deleteProfile(profileId: String) {
+        if (profileId == uiState.value.currentProfile) return
+        val profile = profileDao.getById(profileId) ?: return
+        profileDao.delete(profile)
+        loadProfiles()
+    }
+
+    suspend fun factoryReset() {
         libraryDao.deleteAll()
         watchlistDao.deleteAll()
         historyDao.deleteAll()
@@ -155,32 +164,21 @@ class ProfileViewModel @Inject constructor(
         _uiState.value = ProfileUiState()
     }
 
-    private suspend fun buildExportData(): ExportData {
-        return ExportData(
-            library = libraryDao.getAll(),
-            watchlist = watchlistDao.getAll(),
-            history = historyDao.getAll(),
-            watchProgress = watchProgressDao.getAll(),
-            addons = addonDao.getAll(),
-            profiles = profileDao.getAll()
-        )
-    }
-
     data class ProfileUiState(
         val theme: String = "dark",
         val hindiPriority: Boolean = true,
         val autoPlayNext: Boolean = false,
         val parentalControl: Boolean = false,
-        val currentProfile: String = "default"
-    )
-
-    data class ExportData(
-        val library: List<com.ultrastream.app.data.models.LibraryItem>,
-        val watchlist: List<com.ultrastream.app.data.models.WatchlistItem>,
-        val history: List<com.ultrastream.app.data.models.HistoryItem>,
-        val watchProgress: List<com.ultrastream.app.data.models.WatchProgress>,
-        val addons: List<com.ultrastream.app.data.models.Addon>,
-        val profiles: List<com.ultrastream.app.data.models.Profile>
+        val parentalRating: String = "PG-13",
+        val subtitleLanguage: String = "English",
+        val currentProfile: String = "default",
+        val profiles: List<Profile> = emptyList(),
+        val watchedCount: Int = 0,
+        val inProgressCount: Int = 0,
+        val libraryCount: Int = 0,
+        val watchlistCount: Int = 0,
+        val historyCount: Int = 0,
+        val completionRate: Int = 0
     )
 }
 

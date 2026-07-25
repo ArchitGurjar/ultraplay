@@ -31,20 +31,70 @@ class MetaRepository @Inject constructor(
         }
 
         val addons = addonRepository.getEnabledAddons()
-        var meta: Meta? = null
+        var mergedMeta: Meta? = null
+        val allVideos = mutableListOf<Video>()
+
         for (addon in addons) {
             val base = buildAddonBaseUrl(addon.url)
             val fullUrl = "$base/meta/$type/$id.json"
-            meta = try {
+            val meta = try {
                 stremioApi.getMeta(fullUrl).meta
             } catch (e: Exception) {
                 null
             }
-            if (meta != null) break
+            if (meta != null) {
+                if (mergedMeta == null) {
+                    mergedMeta = meta.copy(videos = null)
+                } else {
+                    mergedMeta = mergedMeta.copy(
+                        name = mergedMeta.name.takeIf { it.isNotBlank() } ?: meta.name,
+                        poster = mergedMeta.poster ?: meta.poster,
+                        background = mergedMeta.background ?: meta.background,
+                        imdbRating = mergedMeta.imdbRating ?: meta.imdbRating,
+                        year = mergedMeta.year ?: meta.year,
+                        releaseInfo = mergedMeta.releaseInfo ?: meta.releaseInfo,
+                        released = mergedMeta.released ?: meta.released,
+                        description = mergedMeta.description ?: meta.description,
+                        genre = mergedMeta.genre ?: meta.genre,
+                        runtime = mergedMeta.runtime ?: meta.runtime,
+                        cast = mergedMeta.cast ?: meta.cast,
+                        imdb_id = mergedMeta.imdb_id ?: meta.imdb_id
+                    )
+                }
+                meta.videos?.let { netVideos ->
+                    allVideos.addAll(netVideos.map { netVideo ->
+                        Video(
+                            season = netVideo.season,
+                            episode = netVideo.episode,
+                            name = netVideo.name,
+                            title = netVideo.title,
+                            description = netVideo.description,
+                            thumbnail = netVideo.thumbnail,
+                            url = netVideo.url
+                        )
+                    })
+                }
+            }
         }
-        if (meta == null) return null
 
-        val metaItem = convertToMetaItem(meta)
+        if (mergedMeta == null) return null
+
+        val uniqueVideos = allVideos.distinctBy { it.season?.toString() + ":" + it.episode?.toString() + ":" + it.name }
+        val finalMeta = mergedMeta.copy(
+            videos = uniqueVideos.map { video ->
+                com.ultrastream.app.network.Video(
+                    season = video.season,
+                    episode = video.episode,
+                    name = video.name,
+                    title = video.title,
+                    description = video.description,
+                    thumbnail = video.thumbnail,
+                    url = video.url
+                )
+            }
+        )
+
+        val metaItem = convertToMetaItem(finalMeta)
         val json = moshi.adapter(MetaItem::class.java).toJson(metaItem)
         cachedMetaDao.insert(CachedMeta(cacheKey, json))
         return metaItem

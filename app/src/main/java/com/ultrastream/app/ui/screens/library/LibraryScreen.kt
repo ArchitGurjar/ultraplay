@@ -5,22 +5,39 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ultrastream.app.ui.components.GridSection
-import com.ultrastream.app.ui.components.SectionHeader
 import com.ultrastream.app.data.models.MetaItem
+import com.ultrastream.app.data.models.PlaylistEpisode
+import com.ultrastream.app.data.models.SmartPlaylist
+import com.ultrastream.app.data.models.StreamItem
+import com.ultrastream.app.ui.components.GridSection
+import com.ultrastream.app.ui.components.HScrollRow
+import com.ultrastream.app.ui.components.SectionHeader
+import com.ultrastream.app.ui.components.SmartPlaylistCard
+import com.ultrastream.app.ui.components.bottomsheets.SmartPlaylistDetailSheet
+import kotlinx.coroutines.launch
 
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
-    onItemClick: (id: String, type: String) -> Unit
+    onItemClick: (id: String, type: String) -> Unit,
+    onPlayStream: (StreamItem, String) -> Unit   // ✅ added parameter
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var selectedPlaylist by remember { mutableStateOf<SmartPlaylist?>(null) }
+    var showPlaylistDetail by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // ✅ Observe playStream and navigate
+    LaunchedEffect(uiState.playStream) {
+        uiState.playStream?.let { (stream, title) ->
+            onPlayStream(stream, title)
+            viewModel.clearPlayStream()
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -33,6 +50,32 @@ fun LibraryScreen(
                 }
             }
         } else {
+            // Smart Playlists
+            item {
+                SectionHeader(title = "Smart Playlists")
+                if (uiState.smartPlaylists.isEmpty()) {
+                    Text("No smart playlists", modifier = Modifier.padding(horizontal = 16.dp))
+                } else {
+                    HScrollRow {
+                        uiState.smartPlaylists.forEach { playlist ->
+                            SmartPlaylistCard(
+                                playlist = playlist,
+                                onClick = {
+                                    selectedPlaylist = playlist
+                                    showPlaylistDetail = true
+                                },
+                                onExportM3u = { pl ->
+                                    scope.launch { viewModel.exportPlaylistM3U(pl) }
+                                },
+                                onPlayAll = { pl ->
+                                    scope.launch { viewModel.playAll(pl) }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             // Library
             item {
                 SectionHeader(title = "Library")
@@ -100,7 +143,7 @@ fun LibraryScreen(
                     val metaItems = uiState.history.map { hist ->
                         MetaItem(
                             id = hist.id,
-                            type = "movie", // default
+                            type = "movie",
                             name = hist.name,
                             poster = hist.poster,
                             background = null,
@@ -120,6 +163,34 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+
+    // Smart Playlist Detail Sheet
+    if (showPlaylistDetail && selectedPlaylist != null) {
+        val playlist = selectedPlaylist!!
+        val episodes = viewModel.parsePlaylistEpisodes(playlist)
+        SmartPlaylistDetailSheet(
+            playlist = playlist,
+            episodes = episodes,
+            onDismiss = { showPlaylistDetail = false },
+            onRetryMissing = {
+                scope.launch {
+                    viewModel.retryMissingEpisodes(playlist)
+                    showPlaylistDetail = false
+                }
+            },
+            onManualPick = { episode ->
+                scope.launch {
+                    viewModel.manualPickEpisode(playlist, episode)
+                }
+            },
+            onPlayEpisode = { episode ->
+                scope.launch {
+                    viewModel.playEpisode(episode)
+                    showPlaylistDetail = false
+                }
+            }
+        )
     }
 }
 

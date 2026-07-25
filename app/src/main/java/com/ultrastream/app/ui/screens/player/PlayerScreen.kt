@@ -25,9 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,11 +39,13 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.ultrastream.app.data.models.StreamItem
+import com.ultrastream.app.player.PlayerHelper
 import com.ultrastream.app.ui.theme.AccentBlue
+import com.ultrastream.app.utils.findActivity
+import kotlinx.coroutines.delay
 
 @Composable
 fun PlayerScreen(
@@ -52,8 +56,9 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val activity = context as? Activity
+    val activity = context.findActivity() // ✅ हमेशा सही Activity
     val lifecycleOwner = LocalLifecycleOwner.current
+    val clipboard = LocalClipboardManager.current
 
     val player by viewModel.player.collectAsState()
     val currentPosition by viewModel.currentPosition.collectAsState()
@@ -64,27 +69,19 @@ fun PlayerScreen(
     val brightness by viewModel.brightness.collectAsState()
     val volume by viewModel.volume.collectAsState()
     val seekMessage by viewModel.seekMessage.collectAsState()
+    val isLocked by viewModel.isLocked.collectAsState()
+    val isFullscreen by viewModel.isFullscreen.collectAsState()
+    val availableQualities by viewModel.availableQualities.collectAsState()
+    val subtitleTracks by viewModel.subtitleTracks.collectAsState()
+    val currentSpeed by viewModel.speed.collectAsState()
 
-    var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
-    var isFullscreen by remember { mutableStateOf(false) }
-    var showAudioSheet by remember { mutableStateOf(false) }
+    var showQualitySheet by remember { mutableStateOf(false) }
     var showSubtitleSheet by remember { mutableStateOf(false) }
+    var showSpeedSheet by remember { mutableStateOf(false) }
+    var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
     LaunchedEffect(stream) {
         viewModel.initializePlayer(context, stream, title)
-    }
-
-    DisposableEffect(Unit) {
-        val window = activity?.window
-        val insetsController = window?.let { WindowInsetsControllerCompat(it, view) }
-        insetsController?.let {
-            it.hide(WindowInsetsCompat.Type.systemBars())
-            it.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
-        onDispose {
-            insetsController?.show(WindowInsetsCompat.Type.systemBars())
-            viewModel.releasePlayer()
-        }
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -96,7 +93,7 @@ fun PlayerScreen(
                     }
                 }
                 Lifecycle.Event.ON_RESUME -> {
-                    viewModel.play()
+                    if (!isLocked) viewModel.play()
                 }
                 else -> {}
             }
@@ -104,6 +101,12 @@ fun PlayerScreen(
         lifecycleOwner.lifecycle.addObserver(listener)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(listener)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.releasePlayer()
         }
     }
 
@@ -120,6 +123,17 @@ fun PlayerScreen(
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val targetVol = (volume * maxVol).toInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+    }
+
+    LaunchedEffect(isFullscreen) {
+        if (isFullscreen) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            WindowInsetsControllerCompat(activity?.window!!, view).hide(WindowInsetsCompat.Type.systemBars())
+            WindowInsetsControllerCompat(activity?.window!!, view).systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            WindowInsetsControllerCompat(activity?.window!!, view).show(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     Box(
@@ -145,35 +159,37 @@ fun PlayerScreen(
             }
         )
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = { offset ->
-                            val width = size.width
-                            val seekTime = if (offset.x < width / 2) -10000L else 10000L
-                            viewModel.seekBy(seekTime)
-                        }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            val width = size.width
-                            val deltaX = dragAmount.x / width
-                            if (change.position.x < width / 2) {
-                                val newBrightness = (brightness + deltaX * 2).coerceIn(-1f, 1f)
-                                viewModel.setBrightness(newBrightness)
-                            } else {
-                                val newVolume = (volume + deltaX * 2).coerceIn(0f, 1f)
-                                viewModel.setVolume(newVolume)
+        if (!isLocked) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = { offset ->
+                                val width = size.width
+                                val seekTime = if (offset.x < width / 2) -10000L else 10000L
+                                viewModel.seekBy(seekTime)
                             }
-                        }
-                    )
-                }
-        )
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val width = size.width
+                                val deltaX = dragAmount.x / width
+                                if (change.position.x < width / 2) {
+                                    val newBrightness = (brightness + deltaX * 2).coerceIn(0f, 1f)
+                                    viewModel.setBrightness(newBrightness)
+                                } else {
+                                    val newVolume = (volume + deltaX * 2).coerceIn(0f, 1f)
+                                    viewModel.setVolume(newVolume)
+                                }
+                            }
+                        )
+                    }
+            )
+        }
 
         if (seekMessage != null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -207,34 +223,47 @@ fun PlayerScreen(
                     text = if (playerTitle.isNotEmpty()) playerTitle else title,
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = { showAudioSheet = true }) {
+                    IconButton(onClick = { viewModel.toggleLock() }) {
                         Icon(
-                            imageVector = Icons.Default.VolumeUp,
-                            contentDescription = "Audio Tracks",
+                            if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = if (isLocked) "Unlock" else "Lock",
                             tint = Color.White
                         )
                     }
-                    IconButton(onClick = { showSubtitleSheet = true }) {
-                        Icon(
-                            imageVector = Icons.Default.ClosedCaption,
-                            contentDescription = "Subtitles",
-                            tint = Color.White
-                        )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        IconButton(onClick = { activity?.enterPictureInPictureMode() }) {
+                            Icon(Icons.Default.PictureInPicture, contentDescription = "Picture in Picture", tint = Color.White)
+                        }
                     }
+                    // Download / Open in external player
                     IconButton(
                         onClick = {
-                            onBack()
-                            viewModel.releasePlayer()
+                            val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
+                            if (!url.isNullOrBlank()) {
+                                if (url.startsWith("magnet:")) {
+                                    clipboard.setText(AnnotatedString(url))
+                                    android.widget.Toast.makeText(context, "Magnet copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    if (url.contains(".m3u8") || url.contains(".mpd")) { clipboard.setText(AnnotatedString(url)); android.widget.Toast.makeText(context, "HLS/DASH link copied", android.widget.Toast.LENGTH_SHORT).show() } else { activity?.let { PlayerHelper.openInExternalPlayer(it, url, title) } ?: run { android.widget.Toast.makeText(context, "Cannot open", android.widget.Toast.LENGTH_SHORT).show() } }
+                                }
+                            }
                         }
                     ) {
+                        Icon(Icons.Default.FileDownload, contentDescription = "Download/Open", tint = Color.White)
+                    }
+                    IconButton(onClick = { viewModel.toggleFullscreen() }) {
                         Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
+                            if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = "Fullscreen",
                             tint = Color.White
                         )
+                    }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                     }
                 }
             }
@@ -273,6 +302,14 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = { showSpeedSheet = true }) {
+                    Text(
+                        text = "${currentSpeed}x",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
                 IconButton(onClick = { viewModel.skipBackward() }) {
                     Icon(Icons.Default.Replay10, contentDescription = "Back 10s", tint = Color.White)
                 }
@@ -287,33 +324,11 @@ fun PlayerScreen(
                 IconButton(onClick = { viewModel.skipForward() }) {
                     Icon(Icons.Default.Forward10, contentDescription = "Forward 10s", tint = Color.White)
                 }
-                IconButton(onClick = {
-                    resizeMode = when (resizeMode) {
-                        AspectRatioFrameLayout.RESIZE_MODE_FIT -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                        AspectRatioFrameLayout.RESIZE_MODE_FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
-                        AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH -> AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT
-                        else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    }
-                }) {
-                    Icon(Icons.Default.AspectRatio, contentDescription = "Resize Mode", tint = Color.White)
+                IconButton(onClick = { showQualitySheet = true }) {
+                    Icon(Icons.Default.Hd, contentDescription = "Quality", tint = Color.White)
                 }
-                IconButton(onClick = {
-                    isFullscreen = !isFullscreen
-                    if (isFullscreen) {
-                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                        WindowInsetsControllerCompat(activity?.window!!, view).hide(WindowInsetsCompat.Type.systemBars())
-                        WindowInsetsControllerCompat(activity?.window!!, view).systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                    } else {
-                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                        WindowInsetsControllerCompat(activity?.window!!, view).show(WindowInsetsCompat.Type.systemBars())
-                    }
-                }) {
-                    Icon(
-                        if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                        contentDescription = "Fullscreen",
-                        tint = Color.White
-                    )
+                IconButton(onClick = { showSubtitleSheet = true }) {
+                    Icon(Icons.Default.ClosedCaption, contentDescription = "Subtitles", tint = Color.White)
                 }
             }
         }
@@ -338,22 +353,19 @@ fun PlayerScreen(
         }
     }
 
-    if (showAudioSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showAudioSheet = false }
-        ) {
-            val audioTracks by viewModel.audioTracks.collectAsState()
+    if (showQualitySheet) {
+        ModalBottomSheet(onDismissRequest = { showQualitySheet = false }) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Audio Tracks", style = MaterialTheme.typography.headlineSmall)
+                Text("Select Quality", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn {
-                    items(audioTracks) { track ->
+                    items(availableQualities) { quality ->
                         ListItem(
-                            headlineContent = { Text(track.label) },
-                            supportingContent = { Text(track.language) },
+                            headlineContent = { Text(quality.label) },
+                            supportingContent = { Text(quality.resolution ?: "") },
                             modifier = Modifier.clickable {
-                                viewModel.selectAudioTrack(track)
-                                showAudioSheet = false
+                                viewModel.selectQuality(quality)
+                                showQualitySheet = false
                             }
                         )
                     }
@@ -363,10 +375,7 @@ fun PlayerScreen(
     }
 
     if (showSubtitleSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSubtitleSheet = false }
-        ) {
-            val subtitleTracks by viewModel.subtitleTracks.collectAsState()
+        ModalBottomSheet(onDismissRequest = { showSubtitleSheet = false }) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Subtitles", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -387,6 +396,27 @@ fun PlayerScreen(
                             modifier = Modifier.clickable {
                                 viewModel.selectSubtitleTrack(track)
                                 showSubtitleSheet = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSpeedSheet) {
+        ModalBottomSheet(onDismissRequest = { showSpeedSheet = false }) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Playback Speed", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f)
+                LazyColumn {
+                    items(speeds) { speed ->
+                        ListItem(
+                            headlineContent = { Text("${speed}x") },
+                            modifier = Modifier.clickable {
+                                viewModel.setSpeed(speed)
+                                showSpeedSheet = false
                             }
                         )
                     }

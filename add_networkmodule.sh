@@ -1,3 +1,9 @@
+#!/bin/bash
+cd ~/projects/Ultrastreaming || exit
+
+mkdir -p app/src/main/java/com/ultrastream/app/di
+
+cat > app/src/main/java/com/ultrastream/app/di/NetworkModule.kt <<'EOF'
 package com.ultrastream.app.di
 
 import com.squareup.moshi.Moshi
@@ -21,7 +27,13 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // provideMoshi() REMOVED – DatabaseModule already provides it
+    @Provides
+    @Singleton
+    fun provideMoshi(): Moshi {
+        return Moshi.Builder()
+            .add(KotlinJsonAdapterFactory())
+            .build()
+    }
 
     @Provides
     @Singleton
@@ -50,7 +62,7 @@ object NetworkModule {
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit {
         return Retrofit.Builder()
-            .baseUrl("https://v3-cinemeta.strem.io/")
+            .baseUrl("https://dummy.base.url/")
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
@@ -89,4 +101,9 @@ object NetworkModule {
             .create(PremiumizeApi::class.java)
     }
 }
+EOF
+
+git add app/src/main/java/com/ultrastream/app/di/NetworkModule.kt
+
+echo "✅ NetworkModule.kt created and staged successfully!"
 

@@ -20,7 +20,3 @@ data class Subtitle(
     val name: String?
 )
 
-data class StreamResponse(
-    val streams: List<StreamItem>
-)
-

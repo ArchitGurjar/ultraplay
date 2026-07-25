@@ -36,3 +36,4 @@ class ManageProfilesUseCase @Inject constructor(
         profileDao.delete(profile)
     }
 }
+

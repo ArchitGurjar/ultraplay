@@ -64,3 +64,4 @@ class UpdateWatchProgressUseCase @Inject constructor(
         }
     }
 }
+

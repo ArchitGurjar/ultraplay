@@ -5,3 +5,4 @@ import com.ultrastream.app.data.models.Subtitle
 object SubtitleHolder {
     var selectedSubtitle: Subtitle? = null
 }
+

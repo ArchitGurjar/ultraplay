@@ -44,3 +44,4 @@ class FetchSubtitlesUseCase @Inject constructor(
         return allSubtitles.distinctBy { it.url ?: it.file }
     }
 }
+

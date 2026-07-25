@@ -16,3 +16,4 @@ data class RecommendedAddon(
     val url: String,
     val isInstalled: Boolean = false
 )
+

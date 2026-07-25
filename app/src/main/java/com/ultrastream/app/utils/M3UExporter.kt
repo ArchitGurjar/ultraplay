@@ -26,14 +26,14 @@ class M3UExporter(private val context: Context) {
     private fun buildM3UContent(streams: List<StreamItem>, title: String): String {
         val sb = StringBuilder()
         sb.appendLine("#EXTM3U")
-        sb.appendLine("#PLAYLIST: \$title")
+        sb.appendLine("#PLAYLIST: $title")
 
         streams.forEach { stream ->
             val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
             if (url.isNullOrBlank()) return@forEach
             if (url.startsWith("magnet:")) return@forEach
             val name = stream.title ?: stream.name ?: "Stream"
-            sb.appendLine("#EXTINF:-1,\${escapeM3UString(name)}")
+            sb.appendLine("#EXTINF:-1,${escapeM3UString(name)}")
             sb.appendLine(url)
         }
 
@@ -53,7 +53,9 @@ class M3UExporter(private val context: Context) {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(intent, "Share Playlist"))
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            // Ignore
+        }
     }
 
     private fun escapeM3UString(text: String): String {

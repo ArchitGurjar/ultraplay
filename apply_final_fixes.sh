@@ -1,3 +1,346 @@
+#!/bin/bash
+cd ~/projects/Ultrastreaming || exit
+
+echo "🔧 Applying final missing pieces..."
+
+# =================================================================
+# 1. app/build.gradle.kts - Add media3-session dependency
+# =================================================================
+echo "📁 Updating app/build.gradle.kts with media3-session..."
+cat > app/build.gradle.kts <<'EOF'
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.kapt")
+    id("dagger.hilt.android.plugin")
+}
+
+android {
+    namespace = "com.ultrastream.app"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.ultrastream.app"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables.useSupportLibrary = true
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        debug {
+            isMinifyEnabled = false
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    buildFeatures {
+        compose = true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.4"
+    }
+    packagingOptions {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+dependencies {
+    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.activity:activity-compose:1.8.0")
+
+    // Compose
+    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+
+    // Navigation
+    implementation("androidx.navigation:navigation-compose:2.7.5")
+
+    // Room
+    implementation("androidx.room:room-runtime:2.6.0")
+    kapt("androidx.room:room-compiler:2.6.0")
+    implementation("androidx.room:room-ktx:2.6.0")
+
+    // DataStore
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // Networking
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-moshi:2.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
+    kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.0")
+
+    // Coil
+    implementation("io.coil-kt:coil-compose:2.5.0")
+
+    // Media3 ExoPlayer
+    implementation("androidx.media3:media3-exoplayer:1.2.0")
+    implementation("androidx.media3:media3-ui:1.2.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.2.0")
+    implementation("androidx.media3:media3-exoplayer-dash:1.2.0")
+    implementation("androidx.media3:media3-session:1.2.0") // ✅ नई डिपेंडेंसी
+
+    // Hilt
+    implementation("com.google.dagger:hilt-android:2.48")
+    kapt("com.google.dagger:hilt-compiler:2.48")
+    implementation("androidx.hilt:hilt-navigation-compose:1.0.0")
+
+    // Testing
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+EOF
+git add app/build.gradle.kts
+
+# =================================================================
+# 2. MainActivity.kt - Use Material Icons instead of drawable resources
+# =================================================================
+echo "📁 Updating MainActivity.kt with Material Icons..."
+cat > app/src/main/java/com/ultrastream/app/MainActivity.kt <<'EOF'
+package com.ultrastream.app
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import dagger.hilt.android.AndroidEntryPoint
+import java.net.URLDecoder
+import com.ultrastream.app.data.models.StreamItem
+import com.ultrastream.app.ui.navigation.Screen
+import com.ultrastream.app.ui.screens.addons.AddonsScreen
+import com.ultrastream.app.ui.screens.details.DetailsScreen
+import com.ultrastream.app.ui.screens.home.HomeScreen
+import com.ultrastream.app.ui.screens.library.LibraryScreen
+import com.ultrastream.app.ui.screens.player.PlayerScreen
+import com.ultrastream.app.ui.screens.profile.ProfileScreen
+import com.ultrastream.app.ui.screens.search.SearchScreen
+import com.ultrastream.app.ui.theme.UltraStreamTheme
+import com.ultrastream.app.utils.StreamDataHolder
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+    private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            UltraStreamTheme {
+                UltraStreamNavHost()
+            }
+        }
+    }
+
+    @Composable
+    fun UltraStreamNavHost() {
+        val navController = rememberNavController()
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentDestination = navBackStackEntry?.destination
+                    val items = listOf(
+                        Triple(Screen.Home, "Home", Icons.Default.Home),
+                        Triple(Screen.Library, "Library", Icons.Default.VideoLibrary),
+                        Triple(Screen.Search, "Search", Icons.Default.Search),
+                        Triple(Screen.Addons, "Addons", Icons.Default.Extension),
+                        Triple(Screen.Profile, "Profile", Icons.Default.Person)
+                    )
+                    items.forEach { (screen, title, iconVector) ->
+                        NavigationBarItem(
+                            icon = { Icon(imageVector = iconVector, contentDescription = title) },
+                            label = { Text(title) },
+                            selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                            onClick = {
+                                navController.navigate(screen.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = Screen.Home.route,
+                modifier = Modifier.padding(innerPadding)
+            ) {
+                composable(Screen.Home.route) {
+                    HomeScreen { id, type ->
+                        navController.navigate(Screen.Details.pass(id, type))
+                    }
+                }
+                composable(Screen.Library.route) {
+                    LibraryScreen { id, type ->
+                        navController.navigate(Screen.Details.pass(id, type))
+                    }
+                }
+                composable(Screen.Search.route) {
+                    SearchScreen { id, type ->
+                        navController.navigate(Screen.Details.pass(id, type))
+                    }
+                }
+                composable(Screen.Addons.route) {
+                    AddonsScreen()
+                }
+                composable(Screen.Profile.route) {
+                    ProfileScreen()
+                }
+                composable(Screen.Details.route) { backStackEntry ->
+                    val id = URLDecoder.decode(backStackEntry.arguments?.getString("id") ?: "", "UTF-8")
+                    val type = URLDecoder.decode(backStackEntry.arguments?.getString("type") ?: "", "UTF-8")
+                    DetailsScreen(
+                        id = id,
+                        type = type,
+                        onBack = { navController.popBackStack() },
+                        onPlay = { stream: StreamItem, title: String ->
+                            StreamDataHolder.setStream(stream)
+                            navController.navigate(Screen.Player.pass(title))
+                        }
+                    )
+                }
+                composable(Screen.Player.route) { backStackEntry ->
+                    val title = URLDecoder.decode(backStackEntry.arguments?.getString("title") ?: "", "UTF-8")
+                    val stream = StreamDataHolder.currentStream
+                    if (stream != null) {
+                        PlayerScreen(
+                            stream = stream,
+                            title = title.ifBlank { "Now Playing" },
+                            onBack = {
+                                StreamDataHolder.clear()
+                                navController.popBackStack()
+                            }
+                        )
+                    } else {
+                        navController.popBackStack()
+                    }
+                }
+            }
+        }
+    }
+}
+EOF
+git add app/src/main/java/com/ultrastream/app/MainActivity.kt
+
+# =================================================================
+# 3. AndroidManifest.xml - Add permission, update configChanges, add PlayerService
+# =================================================================
+echo "📁 Updating AndroidManifest.xml..."
+cat > app/src/main/AndroidManifest.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.ultrastream.app">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" /> <!-- ✅ नया -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application
+        android:name=".UltraStreamApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.UltraStream"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" <!-- ✅ updated -->
+            android:exported="true"
+            android:supportsPictureInPicture="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- ✅ PlayerService -->
+        <service
+            android:name=".player.PlayerService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>
+EOF
+git add app/src/main/AndroidManifest.xml
+
+# =================================================================
+# 4. PlayerViewModel.kt - Add MediaSession integration
+# =================================================================
+echo "📁 Updating PlayerViewModel.kt with MediaSession..."
+cat > app/src/main/java/com/ultrastream/app/ui/screens/player/PlayerViewModel.kt <<'EOF'
 package com.ultrastream.app.ui.screens.player
 
 import android.content.Context
@@ -440,4 +783,22 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
         mediaSession = null
     }
 }
+EOF
+git add app/src/main/java/com/ultrastream/app/ui/screens/player/PlayerViewModel.kt
+
+# =================================================================
+# 5. gradle.properties - Create at project root
+# =================================================================
+echo "📁 Creating gradle.properties..."
+cat > gradle.properties <<'EOF'
+# UltraStream/gradle.properties
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.enableJetifier=true
+kotlin.stdlib.default.dependency=false
+EOF
+git add gradle.properties
+
+echo "✅ All final missing pieces applied successfully!"
+echo "🚀 Now run: git commit -m \"Apply final missing pieces: media3-session, Material Icons, manifest updates, MediaSession, gradle.properties\" && git push -u origin main"
 

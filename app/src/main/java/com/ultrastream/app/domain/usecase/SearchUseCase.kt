@@ -106,3 +106,4 @@ class SearchUseCase @Inject constructor(
         }
     }
 }
+

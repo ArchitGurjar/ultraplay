@@ -17,3 +17,4 @@ class ResolveStreamUseCase @Inject constructor(
         return streamRepository.resolveStream(stream, debridKey.takeIf { it.isNotBlank() })
     }
 }
+

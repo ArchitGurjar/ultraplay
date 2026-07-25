@@ -5,7 +5,6 @@ import retrofit2.http.Header
 import retrofit2.http.Query
 
 interface AllDebridApi {
-
     @GET("magnet/upload")
     suspend fun uploadMagnet(
         @Header("Authorization") auth: String,
