@@ -10,3 +10,9 @@ data class Profile(
     val avatar: String
 )
 
+data class RecommendedAddon(
+    val name: String,
+    val description: String,
+    val url: String,
+    val isInstalled: Boolean = false
+)
