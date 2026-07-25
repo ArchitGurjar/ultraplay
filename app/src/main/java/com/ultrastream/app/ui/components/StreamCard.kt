@@ -24,7 +24,7 @@ fun StreamCard(
     stream: StreamItem,
     onClick: () -> Unit
 ) {
-    val metadata = remember { StreamParser().parseMetadata(
+    val metadata = StreamParser().parseMetadata(
         (stream.title ?: "") + " " + (stream.name ?: "") + " " + (stream.description ?: "")
     )
 

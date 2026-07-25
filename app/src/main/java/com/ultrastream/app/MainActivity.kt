@@ -36,7 +36,6 @@ import com.ultrastream.app.ui.screens.player.PlayerScreen
 import com.ultrastream.app.ui.screens.profile.ProfileScreen
 import com.ultrastream.app.ui.screens.search.SearchScreen
 import com.ultrastream.app.ui.theme.UltraStreamTheme
-import com.ultrastream.app.ui.components.GlassSurface
 import com.ultrastream.app.utils.StreamDataHolder
 
 @AndroidEntryPoint
@@ -57,36 +56,19 @@ class MainActivity : ComponentActivity() {
         val navController = rememberNavController()
         Scaffold(
             bottomBar = {
-                GlassSurface(modifier = Modifier.fillMaxWidth()) {
-                    NavigationBar {
-                        val navBackStackEntry by navController.currentBackStackEntryAsState()
-                        val currentDestination = navBackStackEntry?.destination
-                        val items = listOf(
-                            Triple(Screen.Home, "Home", Icons.Default.Home),
-                            Triple(Screen.Library, "Library", Icons.Default.VideoLibrary),
-                            Triple(Screen.Search, "Search", Icons.Default.Search),
-                            Triple(Screen.Addons, "Addons", Icons.Default.Extension),
-                            Triple(Screen.Profile, "Profile", Icons.Default.Person)
-                        )
-                        items.forEach { (screen, title, iconVector) ->
-                            NavigationBarItem(
-                                icon = { Icon(imageVector = iconVector, contentDescription = title) },
-                                label = { Text(title) },
-                                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                                onClick = {
-                                    navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
+                NavigationBar {
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentDestination = navBackStackEntry?.destination
+                    val items = listOf(
+                        Triple(Screen.Home, "Home", Icons.Default.Home),
+                        Triple(Screen.Library, "Library", Icons.Default.VideoLibrary),
+                        Triple(Screen.Search, "Search", Icons.Default.Search),
+                        Triple(Screen.Addons, "Addons", Icons.Default.Extension),
+                        Triple(Screen.Profile, "Profile", Icons.Default.Person)
+                    )
+                    items.forEach { (screen, title, iconVector) ->
+                        NavigationBarItem(
+                            icon = { Icon(imageVector = iconVector, contentDescription = title) },
                             label = { Text(title) },
                             selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                             onClick = {

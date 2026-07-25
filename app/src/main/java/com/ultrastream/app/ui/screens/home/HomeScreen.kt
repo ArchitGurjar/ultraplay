@@ -17,7 +17,6 @@ import com.ultrastream.app.ui.components.HScrollRow
 import com.ultrastream.app.ui.components.PosterCard
 import com.ultrastream.app.ui.components.RecommendedAddonCard
 import com.ultrastream.app.ui.components.SectionHeader
-import com.ultrastream.app.ui.components.SkeletonPosterCard
 
 @Composable
 fun HomeScreen(
@@ -31,14 +30,10 @@ fun HomeScreen(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
-        // Continue Watching with skeleton
-        item(key = "continue_watching") {
+        // Continue Watching
+        item {
             SectionHeader(title = "Continue Watching")
-            if (uiState.isLoading) {
-                HScrollRow {
-                    repeat(3) { SkeletonContinueWatchingCard() }
-                }
-            } else if (uiState.continueWatching.isEmpty()) {
+            if (uiState.continueWatching.isEmpty()) {
                 Text("No history yet", modifier = Modifier.padding(horizontal = 16.dp))
             } else {
                 HScrollRow {
@@ -53,9 +48,9 @@ fun HomeScreen(
             }
         }
 
-        // Recommendations (Because you watched)
+        // Recommendations
         if (uiState.recommendations.isNotEmpty()) {
-            item(key = "recommendations") {
+            item {
                 SectionHeader(title = "🎯 Because you watched")
                 HScrollRow {
                     uiState.recommendations.forEach { meta ->
@@ -69,13 +64,9 @@ fun HomeScreen(
         }
 
         // Recommended Addons
-        item(key = "recommended_addons") {
+        item {
             SectionHeader(title = "Recommended Addons")
-            if (uiState.isLoading) {
-                HScrollRow {
-                    repeat(2) { SkeletonRecommendedAddonCard() }
-                }
-            } else if (uiState.recommendedAddons.isEmpty()) {
+            if (uiState.recommendedAddons.isEmpty()) {
                 Text("No recommendations", modifier = Modifier.padding(horizontal = 16.dp))
             } else {
                 HScrollRow {
@@ -91,21 +82,16 @@ fun HomeScreen(
             }
         }
 
-        // Catalog rows with See All and skeletons
+        // Catalog rows
         if (uiState.isLoading) {
-            // Show 3 skeleton catalog rows
-            repeat(3) {
-                item {
-                    SectionHeader(title = "Loading...")
-                    HScrollRow {
-                        repeat(4) { SkeletonPosterCard() }
-                    }
+            item {
+                Box(modifier = Modifier.fillParentMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                    CircularProgressIndicator()
                 }
             }
         } else {
             uiState.catalogRows.forEach { (rowId, items) ->
-                item(key = rowId) {
-                item(key = rowId) {
+                item {
                     val parts = rowId.split("_")
                     val displayName = when {
                         parts.size >= 3 -> {
@@ -130,24 +116,6 @@ fun HomeScreen(
                                     onClick = { onItemClick(meta.id, meta.type) }
                                 )
                             }
-                        }
-                    }
-                }
-            }
-        }
-
-        // If error, show retry
-        if (uiState.error != null) {
-            item {
-                Box(
-                    modifier = Modifier.fillParentMaxWidth().padding(16.dp),
-                    contentAlignment = androidx.compose.ui.Alignment.Center
-                ) {
-                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                        Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { viewModel.refresh() }) {
-                            Text("Retry")
                         }
                     }
                 }
