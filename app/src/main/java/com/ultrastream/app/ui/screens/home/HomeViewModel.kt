@@ -23,8 +23,8 @@ class HomeViewModel @Inject constructor(
     private val addonRepository: AddonRepository,
     private val getHomeCatalogsUseCase: GetHomeCatalogsUseCase,
     private val updateWatchProgressUseCase: UpdateWatchProgressUseCase,
-    private val metaRepository: MetaRepository,   // ✅ Added
-    private val historyDao: HistoryDao           // ✅ Added
+    private val metaRepository: MetaRepository,
+    private val historyDao: HistoryDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -36,31 +36,35 @@ class HomeViewModel @Inject constructor(
 
     fun loadHomeData() {
         viewModelScope.launch {
-        try {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            try {
+                _uiState.value = _uiState.value.copy(isLoading = true)
 
-            val continueWatching = updateWatchProgressUseCase.getContinueWatching()
-            val addons = addonRepository.getEnabledAddons()
-            val catalogRows = getHomeCatalogsUseCase()
+                val continueWatching = updateWatchProgressUseCase.getContinueWatching()
+                val addons = addonRepository.getEnabledAddons()
+                val catalogRows = getHomeCatalogsUseCase()
+                val recommendations = buildRecommendations()
 
-            // ✅ Recommendations: based on history
-            val recommendations = buildRecommendations()
-
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                continueWatching = continueWatching,
-                addons = addons,
-                catalogRows = catalogRows,
-                recommendedAddons = getRecommendedAddons(addons),
-                recommendations = recommendations
-            )
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    continueWatching = continueWatching,
+                    addons = addons,
+                    catalogRows = catalogRows,
+                    recommendedAddons = getRecommendedAddons(addons),
+                    recommendations = recommendations,
+                    error = null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Failed to load home"
+                )
+            }
         }
     }
 
     private suspend fun buildRecommendations(): List<MetaItem> {
         val history = historyDao.getAll().take(5)
         if (history.isEmpty()) return emptyList()
-        // For simplicity, fetch meta for the first 3 history items
         val result = mutableListOf<MetaItem>()
         for (item in history) {
             val meta = metaRepository.getMeta(item.id, item.type)
@@ -84,12 +88,12 @@ class HomeViewModel @Inject constructor(
     fun refresh() = loadHomeData()
 
     data class HomeUiState(
-        val error: String? = null,
         val isLoading: Boolean = false,
         val addons: List<Addon> = emptyList(),
         val continueWatching: List<Pair<HistoryItem, Int>> = emptyList(),
         val catalogRows: Map<String, List<MetaItem>> = emptyMap(),
         val recommendedAddons: List<RecommendedAddon> = emptyList(),
-        val recommendations: List<MetaItem> = emptyList() // ✅ New
+        val recommendations: List<MetaItem> = emptyList(),
+        val error: String? = null
     )
 }

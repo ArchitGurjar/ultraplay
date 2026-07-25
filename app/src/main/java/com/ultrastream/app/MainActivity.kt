@@ -24,7 +24,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import dagger.hilt.android.AndroidEntryPoint
 import java.net.URLDecoder
-import com.ultrastream.app.data.models.MetaItem   // ✅ Added
+import com.ultrastream.app.data.models.MetaItem
 import com.ultrastream.app.data.models.StreamItem
 import com.ultrastream.app.ui.navigation.Screen
 import com.ultrastream.app.ui.screens.addons.AddonsScreen
@@ -101,26 +101,33 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+
                 composable(Screen.Library.route) {
-                    LibraryScreen(onItemClick = { id, type ->
-        }, onPlayStream = { stream, title ->
-            StreamDataHolder.setStream(stream)
-            navController.navigate(Screen.Player.pass(title))
-        }
-                        navController.navigate(Screen.Details.pass(id, type))
-                    }
+                    LibraryScreen(
+                        onItemClick = { id, type ->
+                            navController.navigate(Screen.Details.pass(id, type))
+                        },
+                        onPlayStream = { stream, title ->
+                            StreamDataHolder.setStream(stream)
+                            navController.navigate(Screen.Player.pass(title))
+                        }
+                    )
                 }
+
                 composable(Screen.Search.route) {
                     SearchScreen { id, type ->
                         navController.navigate(Screen.Details.pass(id, type))
                     }
                 }
+
                 composable(Screen.Addons.route) {
                     AddonsScreen()
                 }
+
                 composable(Screen.Profile.route) {
                     ProfileScreen()
                 }
+
                 composable(Screen.Details.route) { backStackEntry ->
                     val id = URLDecoder.decode(backStackEntry.arguments?.getString("id") ?: "", "UTF-8")
                     val type = URLDecoder.decode(backStackEntry.arguments?.getString("type") ?: "", "UTF-8")
@@ -134,6 +141,7 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+
                 composable(Screen.Player.route) { backStackEntry ->
                     val title = URLDecoder.decode(backStackEntry.arguments?.getString("title") ?: "", "UTF-8")
                     val stream = StreamDataHolder.currentStream
@@ -150,7 +158,7 @@ class MainActivity : ComponentActivity() {
                         navController.popBackStack()
                     }
                 }
-                // ✅ New Catalog route
+
                 composable(Screen.Catalog.route) { backStackEntry ->
                     val rowId = URLDecoder.decode(backStackEntry.arguments?.getString("rowId") ?: "", "UTF-8")
                     val title = URLDecoder.decode(backStackEntry.arguments?.getString("title") ?: "", "UTF-8")
