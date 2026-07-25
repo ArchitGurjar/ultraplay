@@ -11,7 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ultrastream.app.data.models.MetaItem
+import com.ultrastream.app.data.models.MetaItem  // ✅ Added
 import com.ultrastream.app.ui.components.ContinueWatchingCard
 import com.ultrastream.app.ui.components.HScrollRow
 import com.ultrastream.app.ui.components.PosterCard
@@ -48,7 +48,7 @@ fun HomeScreen(
             }
         }
 
-        // Recommendations
+        // ✅ RECOMMENDATIONS (Because you watched)
         if (uiState.recommendations.isNotEmpty()) {
             item {
                 SectionHeader(title = "🎯 Because you watched")
@@ -63,7 +63,7 @@ fun HomeScreen(
             }
         }
 
-        // Recommended Addons
+        // Recommended Addons (keep)
         item {
             SectionHeader(title = "Recommended Addons")
             if (uiState.recommendedAddons.isEmpty()) {
@@ -82,7 +82,7 @@ fun HomeScreen(
             }
         }
 
-        // Catalog rows
+        // Catalog rows with See All
         if (uiState.isLoading) {
             item {
                 Box(modifier = Modifier.fillParentMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {

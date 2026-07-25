@@ -77,7 +77,7 @@ fun SearchScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(uiState.results.size, key = { index -> uiState.results[index].id }) { index ->
+                items(uiState.results.size) { index ->
                     val item = uiState.results[index]
                     PosterCard(
                         meta = item,

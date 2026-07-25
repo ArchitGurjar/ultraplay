@@ -11,7 +11,6 @@ import com.ultrastream.app.data.repository.AddonRepository
 import com.ultrastream.app.data.repository.MetaRepository
 import com.ultrastream.app.domain.usecase.GetHomeCatalogsUseCase
 import com.ultrastream.app.domain.usecase.UpdateWatchProgressUseCase
-import com.ultrastream.app.domain.usecase.InstallAddonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,42 +24,21 @@ class HomeViewModel @Inject constructor(
     private val getHomeCatalogsUseCase: GetHomeCatalogsUseCase,
     private val updateWatchProgressUseCase: UpdateWatchProgressUseCase,
     private val metaRepository: MetaRepository,
-    private val historyDao: HistoryDao,
-    private val installAddonUseCase: InstallAddonUseCase
+    private val historyDao: HistoryDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            ensureStreamAddonInstalled()
-            loadHomeData()
-        }
-    }
-
-    private suspend fun ensureStreamAddonInstalled(retries: Int = 3) {
-        var attempt = 0
-        while (attempt < retries) {
-            val addons = addonRepository.getAllAddons()
-            val hasTorrentio = addons.any { it.url.contains("torrentio") || it.id.contains("torrentio") }
-            if (hasTorrentio) return
-            try {
-                installAddonUseCase("https://torrentio.strem.fun/manifest.json")
-                kotlinx.coroutines.delay(500)
-                attempt++
-            } catch (e: Exception) {
-                attempt++
-            }
-        }
-        // If still not installed, force refresh addons list
-        addonRepository.getAllAddons()
+        loadHomeData()
     }
 
     fun loadHomeData() {
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true)
+
                 val continueWatching = updateWatchProgressUseCase.getContinueWatching()
                 val addons = addonRepository.getEnabledAddons()
                 val catalogRows = getHomeCatalogsUseCase()
@@ -97,10 +75,10 @@ class HomeViewModel @Inject constructor(
 
     private fun getRecommendedAddons(installed: List<Addon>): List<RecommendedAddon> {
         val builtIn = listOf(
-            RecommendedAddon("Torrentio", "Torrent scraper", "https://torrentio.strem.fun/manifest.json"),
-            RecommendedAddon("Cinemeta", "Metadata provider", "https://cinemeta.strem.fun/manifest.json"),
-            RecommendedAddon("Juan Carlos 2", "4K sources", "https://juan-carlos.strem.fun/manifest.json"),
-            RecommendedAddon("Orion", "Premium scraper", "https://orion.strem.fun/manifest.json")
+            RecommendedAddon("Torrentio", "Torrent scraper for movies & series", "https://torrentio.strem.fun/manifest.json"),
+            RecommendedAddon("Cinemeta", "Metadata provider for movies & series", "https://cinemeta.strem.fun/manifest.json"),
+            RecommendedAddon("Juan Carlos 2", "Streaming addon with 4K sources", "https://juan-carlos.strem.fun/manifest.json"),
+            RecommendedAddon("Orion", "Alternative scraper for premium content", "https://orion.strem.fun/manifest.json")
         )
         return builtIn.map { addon ->
             addon.copy(isInstalled = installed.any { it.url == addon.url || it.id == addon.name.lowercase() })

@@ -67,7 +67,6 @@ fun DetailsScreen(
     var selectedStream by remember { mutableStateOf<StreamItem?>(null) }
     var subtitlesList by remember { mutableStateOf<List<Subtitle>>(emptyList()) }
     var streamsRequested by remember { mutableStateOf(false) }
-    var episodesLoading by remember { mutableStateOf(true) } // ✅ skeleton
 
     val meta = uiState.meta
     val filteredEpisodes by viewModel.filteredEpisodes.collectAsState()
@@ -89,14 +88,8 @@ fun DetailsScreen(
         }
     }
 
-    // ✅ Skeleton for episodes
-    LaunchedEffect(filteredEpisodes) {
-        episodesLoading = filteredEpisodes.isEmpty()
-    }
-
-    // ✅ Always open sheet when streams are loaded, even if empty
     LaunchedEffect(uiState.streamsLoading, streamsRequested) {
-        if (!uiState.streamsLoading && streamsRequested) {
+        if (!uiState.streamsLoading && streamsRequested && uiState.streams.isNotEmpty()) {
             showStreamsSheet = true
         }
     }
@@ -106,7 +99,7 @@ fun DetailsScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize()
             ) {
-                // Hero Section (FULL)
+                // Hero Section
                 item {
                     Box(
                         modifier = Modifier
@@ -244,7 +237,7 @@ fun DetailsScreen(
                                 }
                             }
 
-                            // External Links (IMDb, Trailer)
+                            // External Links
                             Column(modifier = Modifier.padding(top = 16.dp)) {
                                 OutlinedButton(
                                     onClick = {
@@ -311,35 +304,28 @@ fun DetailsScreen(
 
                     item {
                         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            if (episodesLoading) {
-                                repeat(3) {
-                                    SkeletonEpisodeCard()
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
-                            } else {
-                                filteredEpisodes.forEach { video ->
-                                    val epNum = video.episode ?: 0
-                                    val seasonNum = video.season ?: 0
-                                    val isWatched = uiState.watchProgress?.percent?.let { it >= 100 } ?: false
-                                    val progressPercent = uiState.watchProgress?.percent ?: 0
+                            filteredEpisodes.forEach { video ->
+                                val epNum = video.episode ?: 0
+                                val seasonNum = video.season ?: 0
+                                val isWatched = uiState.watchProgress?.percent?.let { it >= 100 } ?: false
+                                val progressPercent = uiState.watchProgress?.percent ?: 0
 
-                                    EpisodeCard(
-                                        video = video,
-                                        isWatched = isWatched,
-                                        progressPercent = progressPercent,
-                                        onClick = {
-                                            val currentMeta = uiState.meta
-                                            if (currentMeta != null) {
-                                                viewModel.selectEpisode(epNum)
-                                                viewModel.loadStreams(currentMeta.id, currentMeta.type, seasonNum, epNum)
-                                                streamsRequested = true
-                                            } else {
-                                                Toast.makeText(context, "Metadata not loaded", Toast.LENGTH_SHORT).show()
-                                            }
+                                EpisodeCard(
+                                    video = video,
+                                    isWatched = isWatched,
+                                    progressPercent = progressPercent,
+                                    onClick = {
+                                        val currentMeta = uiState.meta
+                                        if (currentMeta != null) {
+                                            viewModel.selectEpisode(epNum)
+                                            viewModel.loadStreams(currentMeta.id, currentMeta.type, seasonNum, epNum)
+                                            streamsRequested = true
+                                        } else {
+                                            Toast.makeText(context, "Metadata not loaded", Toast.LENGTH_SHORT).show()
                                         }
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
                         }
                     }
@@ -357,64 +343,20 @@ fun DetailsScreen(
         }
     }
 
-    // ✅ Streams Sheet – always opens, shows empty state if needed
-    if (showStreamsSheet) {
-        if (uiState.streams.isNotEmpty()) {
-            StreamsSheet(
-                streams = uiState.streams,
-                onDismiss = {
-                    showStreamsSheet = false
-                    streamsRequested = false
-                },
-                onStreamClick = { stream ->
-                    showStreamsSheet = false
-                    selectedStream = stream
-                    showActionSheet = true
-                }
-            )
-        } else {
-            // Empty state sheet
-            ModalBottomSheet(
-                onDismissRequest = {
-                    showStreamsSheet = false
-                    streamsRequested = false
-                }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "No streams found",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Please install a stream addon like Torrentio from the Addons screen.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            Toast.makeText(context, "Go to Addons screen and install Torrentio.", Toast.LENGTH_LONG).show()
-                            showStreamsSheet = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
-                    ) {
-                        Text("Open Addons Screen", fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(onClick = { showStreamsSheet = false }) {
-                        Text("Close")
-                    }
-                }
+    // Streams Sheet
+    if (showStreamsSheet && uiState.streams.isNotEmpty()) {
+        StreamsSheet(
+            streams = uiState.streams,
+            onDismiss = {
+                showStreamsSheet = false
+                streamsRequested = false
+            },
+            onStreamClick = { stream ->
+                showStreamsSheet = false
+                selectedStream = stream
+                showActionSheet = true
             }
-        }
+        )
     }
 
     // Action Sheet (Stream Actions)
@@ -429,6 +371,7 @@ fun DetailsScreen(
                     onClick = {
                         showActionSheet = false
                         viewModel.playStream(stream, title) { resolved, t ->
+                            // Subtitle will be handled separately via SubtitleHolder
                             onPlay(resolved, t)
                         }
                     },
@@ -548,52 +491,5 @@ fun DetailsScreen(
                 showSeasonsSheet = false
             }
         )
-    }
-}
-
-// ✅ Skeleton Episode Card
-@Composable
-fun SkeletonEpisodeCard() {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(90.dp),
-        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.5f)),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .width(140.dp)
-                    .fillMaxHeight()
-                    .background(Color.Gray.copy(alpha = 0.2f))
-            )
-            Column(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .weight(1f)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.7f)
-                        .height(16.dp)
-                        .background(Color.Gray.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.9f)
-                        .height(12.dp)
-                        .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.4f)
-                        .height(12.dp)
-                        .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                )
-            }
-        }
     }
 }
