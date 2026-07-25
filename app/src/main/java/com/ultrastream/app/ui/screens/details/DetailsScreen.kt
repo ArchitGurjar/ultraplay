@@ -375,7 +375,7 @@ fun DetailsScreen(
                     onClick = {
                         showActionSheet = false
                         viewModel.playStream(stream, title) { resolved, t ->
-                            onPlay(resolved, t)
+                            SubtitleHolder.selectedSubtitle = sub; onPlay(resolved, t)
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),

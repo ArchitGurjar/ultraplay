@@ -62,8 +62,8 @@ class CreateSmartPlaylistUseCase @Inject constructor(
         playlistScope.launch {
             try {
                 val addonUrls = addonRepository.getEnabledAddons().map { it.url }
-                val hindiPriority = preferencesManager.getHindiPriority().first()
-                val debridKey = preferencesManager.getDebridKey().first()
+                val hindiPriority = preferencesManager.getHindiPriority().firstOrNull() ?: true
+                val debridKey = preferencesManager.getDebridKey().firstOrNull() ?: ""
                 val fetchedEpisodes = mutableListOf<PlaylistEpisode>()
 
                 episodes.forEachIndexed { index, ep ->

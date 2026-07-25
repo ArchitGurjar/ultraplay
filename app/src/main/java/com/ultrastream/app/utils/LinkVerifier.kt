@@ -6,14 +6,26 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 @Singleton
 class LinkVerifier @Inject constructor(
     private val okHttpClient: OkHttpClient
 ) {
+    private data class CacheEntry(val result: Boolean, val timestamp: Long)
+
+    private val cache = ConcurrentHashMap<String, CacheEntry>()
+    private val TTL_MS = 5 * 60 * 1000L // 5 minutes
 
     suspend fun verifyLink(url: String): Boolean {
-        return withContext(Dispatchers.IO) {
+        cache[url]?.let { entry ->
+            if (System.currentTimeMillis() - entry.timestamp < TTL_MS) {
+                return entry.result
+            } else {
+                cache.remove(url)
+            }
+        }
+        val result = withContext(Dispatchers.IO) {
             try {
                 val request = Request.Builder()
                     .url(url)
@@ -29,5 +41,7 @@ class LinkVerifier @Inject constructor(
                 false
             }
         }
+        cache[url] = CacheEntry(result, System.currentTimeMillis())
+        return result
     }
 }

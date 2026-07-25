@@ -37,6 +37,10 @@ fun AddonsScreen(
     var addonUrl by remember { mutableStateOf("") }
     var debridKey by remember { mutableStateOf(uiState.debridKey) }
     var selectedProvider by remember { mutableStateOf(uiState.debridProvider) }
+    // ✅ Sync local state with UI state
+    LaunchedEffect(uiState.debridProvider) {
+        selectedProvider = uiState.debridProvider
+    }
 
     // File picker launcher for import
     val importLauncher = rememberLauncherForActivityResult(

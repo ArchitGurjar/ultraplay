@@ -102,7 +102,11 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 composable(Screen.Library.route) {
-                    LibraryScreen { id, type ->
+                    LibraryScreen(onItemClick = { id, type ->
+        }, onPlayStream = { stream, title ->
+            StreamDataHolder.setStream(stream)
+            navController.navigate(Screen.Player.pass(title))
+        }
                         navController.navigate(Screen.Details.pass(id, type))
                     }
                 }

@@ -248,7 +248,7 @@ fun PlayerScreen(
                                     clipboard.setText(AnnotatedString(url))
                                     android.widget.Toast.makeText(context, "Magnet copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
                                 } else {
-                                    PlayerHelper.openInExternalPlayer(activity!!, url, title)
+                                    if (url.contains(".m3u8") || url.contains(".mpd")) { clipboard.setText(AnnotatedString(url)); android.widget.Toast.makeText(context, "HLS/DASH link copied", android.widget.Toast.LENGTH_SHORT).show() } else { activity?.let { PlayerHelper.openInExternalPlayer(it, url, title) } ?: run { android.widget.Toast.makeText(context, "Cannot open", android.widget.Toast.LENGTH_SHORT).show() } }
                                 }
                             }
                         }

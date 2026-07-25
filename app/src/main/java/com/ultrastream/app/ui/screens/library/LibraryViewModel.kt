@@ -228,6 +228,9 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    fun clearPlayStream() {
+        _uiState.value = _uiState.value.copy(playStream = null)
+    }
     fun playEpisode(episode: PlaylistEpisode) {
         val stream = episode.stream
         if (stream != null) {

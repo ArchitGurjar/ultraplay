@@ -79,7 +79,7 @@ class StreamRepository @Inject constructor(
     }
 
     suspend fun resolveStream(stream: StreamItem, debridKey: String?): StreamItem {
-        val provider = when (preferencesManager.getDebridProvider().first()) {
+        val provider = when (preferencesManager.getDebridProvider().firstOrNull() ?: "realdebrid") {
             "alldebrid" -> DebridHelper.DebridProvider.ALL_DEBRID
             "premiumize" -> DebridHelper.DebridProvider.PREMIUMIZE
             else -> DebridHelper.DebridProvider.REAL_DEBRID

@@ -25,6 +25,13 @@ fun LibraryScreen(
     onItemClick: (id: String, type: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    // ✅ Observe playStream and navigate
+    LaunchedEffect(uiState.playStream) {
+        uiState.playStream?.let { (stream, title) ->
+            onPlayStream(stream, title)
+            viewModel.clearPlayStream()
+        }
+    }
     var selectedPlaylist by remember { mutableStateOf<SmartPlaylist?>(null) }
     var showPlaylistDetail by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
