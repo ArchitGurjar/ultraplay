@@ -38,11 +38,11 @@ class AddonRepository @Inject constructor(
                 id = netCat.id,
                 name = netCat.name,
                 extraSupported = netCat.extraSupported,
-                extra = netCat.extra?.map { extra ->
+                extra = netCat.extra?.map {
                     Extra(
-                        name = extra.name,
-                        isRequired = extra.isRequired,
-                        options = extra.options
+                        name = it.name,
+                        isRequired = it.isRequired,
+                        options = it.options
                     )
                 }
             )
@@ -79,3 +79,4 @@ class AddonRepository @Inject constructor(
         addonDao.insertAll(addons)
     }
 }
+

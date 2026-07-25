@@ -40,3 +40,4 @@ interface RealDebridApi {
 data class AddTorrentResponse(val id: String, val uri: String)
 data class TorrentStatus(val id: String, val status: String, val links: List<String>)
 data class UnrestrictedLink(val link: String)
+

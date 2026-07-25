@@ -31,7 +31,7 @@ fun SubtitlesSheet(
                         onClick = { onSubtitleSelected(sub) }
                     ) {
                         Text(
-                            text = sub.name ?: sub.lang ?: "Unknown",
+                            text = sub.lang ?: "Unknown",
                             modifier = Modifier.padding(16.dp)
                         )
                     }
@@ -40,3 +40,4 @@ fun SubtitlesSheet(
         }
     }
 }
+

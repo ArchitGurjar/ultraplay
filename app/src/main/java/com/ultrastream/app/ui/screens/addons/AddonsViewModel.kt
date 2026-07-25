@@ -9,20 +9,17 @@ import com.ultrastream.app.data.models.Addon
 import com.ultrastream.app.data.models.Catalog
 import com.ultrastream.app.data.preferences.PreferencesManager
 import com.ultrastream.app.data.repository.AddonRepository
-import com.ultrastream.app.domain.usecase.InstallAddonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class AddonsViewModel @Inject constructor(
     private val addonRepository: AddonRepository,
-    private val preferencesManager: PreferencesManager,
-    private val installAddonUseCase: InstallAddonUseCase
+    private val preferencesManager: PreferencesManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AddonsUiState())
@@ -33,7 +30,13 @@ class AddonsViewModel @Inject constructor(
     init {
         loadAddons()
         observeDebridKey()
-        observeDebridProvider()
+    }
+
+    fun loadAddons() {
+        viewModelScope.launch {
+            val addons = addonRepository.getAllAddons()
+            _uiState.value = _uiState.value.copy(addons = addons)
+        }
     }
 
     private fun observeDebridKey() {
@@ -44,23 +47,20 @@ class AddonsViewModel @Inject constructor(
         }
     }
 
-    private fun observeDebridProvider() {
-        viewModelScope.launch {
-            preferencesManager.getDebridProvider().collect { provider ->
-                _uiState.value = _uiState.value.copy(debridProvider = provider)
-            }
-        }
-    }
-
-    fun loadAddons() {
-        viewModelScope.launch {
-            val addons = addonRepository.getAllAddons()
-            _uiState.value = _uiState.value.copy(addons = addons)
-        }
-    }
-
     suspend fun installAddon(rawUrl: String): Boolean {
-        val addon = installAddonUseCase(rawUrl)
+        var safeUrl = rawUrl.trim()
+        if (safeUrl.startsWith("stremio://")) {
+            safeUrl = safeUrl.replace("stremio://", "https://")
+        } else if (!safeUrl.startsWith("http")) {
+            safeUrl = "https://$safeUrl"
+        }
+        
+        // Remove trailing slashes if accidentally pasted
+        if (safeUrl.endsWith("/")) {
+            safeUrl = safeUrl.dropLast(1)
+        }
+        
+        val addon = addonRepository.installAddon(safeUrl)
         if (addon != null) {
             loadAddons()
             return true
@@ -83,19 +83,12 @@ class AddonsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(debridKey = key)
     }
 
-    suspend fun saveDebridProvider(provider: String) {
-        preferencesManager.setDebridProvider(provider)
-        _uiState.value = _uiState.value.copy(debridProvider = provider)
-    }
-
     fun exportAddonsJson(): String {
         return try {
             val addons = _uiState.value.addons
             val exportList = addons.map {
-                val catAdapter = moshi.adapter<List<Catalog>>(
-                    Types.newParameterizedType(List::class.java, Catalog::class.java)
-                )
-                val parsedCatalogs = try { catAdapter.fromJson(it.catalogs) } catch (e: Exception) { emptyList() }
+                val catAdapter = moshi.adapter<List<Catalog>>(Types.newParameterizedType(List::class.java, Catalog::class.java))
+                val parsedCatalogs = try { catAdapter.fromJson(it.catalogs) } catch(e:Exception) { emptyList() }
                 StremioAddonExport(it.id, it.url, it.name, parsedCatalogs, it.enabled, it.required)
             }
             val type = Types.newParameterizedType(List::class.java, StremioAddonExport::class.java)
@@ -111,9 +104,7 @@ class AddonsViewModel @Inject constructor(
             val importList = moshi.adapter<List<StremioAddonExport>>(type).fromJson(json) ?: return false
 
             val newAddons = importList.map {
-                val catAdapter = moshi.adapter<List<Catalog>>(
-                    Types.newParameterizedType(List::class.java, Catalog::class.java)
-                )
+                val catAdapter = moshi.adapter<List<Catalog>>(Types.newParameterizedType(List::class.java, Catalog::class.java))
                 val catsJson = catAdapter.toJson(it.catalogs ?: emptyList())
                 Addon(it.id, it.url, it.name, catsJson, it.enabled, it.required)
             }
@@ -127,8 +118,7 @@ class AddonsViewModel @Inject constructor(
 
     data class AddonsUiState(
         val addons: List<Addon> = emptyList(),
-        val debridKey: String = "",
-        val debridProvider: String = "realdebrid"
+        val debridKey: String = ""
     )
 }
 
@@ -140,3 +130,4 @@ data class StremioAddonExport(
     val enabled: Boolean = true,
     val required: Boolean = false
 )
+

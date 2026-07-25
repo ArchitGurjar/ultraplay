@@ -27,3 +27,4 @@ interface ProfileDao {
     @Query("DELETE FROM profiles")
     suspend fun deleteAll()
 }
+

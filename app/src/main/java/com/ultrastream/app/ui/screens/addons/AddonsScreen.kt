@@ -1,8 +1,6 @@
 package com.ultrastream.app.ui.screens.addons
 
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -18,13 +16,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
-import com.ultrastream.app.data.models.RecommendedAddon
-import com.ultrastream.app.ui.components.RecommendedAddonCard
-import com.ultrastream.app.ui.components.HScrollRow
-import java.io.File
-import java.io.InputStreamReader
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddonsScreen(
     viewModel: AddonsViewModel = hiltViewModel()
@@ -33,39 +25,10 @@ fun AddonsScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-
+    
     var addonUrl by remember { mutableStateOf("") }
     var debridKey by remember { mutableStateOf(uiState.debridKey) }
-    var selectedProvider by remember { mutableStateOf(uiState.debridProvider) }
-    // ✅ Sync local state with UI state
-    LaunchedEffect(uiState.debridProvider) {
-        selectedProvider = uiState.debridProvider
-    }
-
-    // File picker launcher for import
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val reader = InputStreamReader(inputStream)
-                val json = reader.readText()
-                reader.close()
-                inputStream?.close()
-                scope.launch {
-                    val success = viewModel.importAddonsJson(json)
-                    if (success) {
-                        Toast.makeText(context, "✅ Addons Imported!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "❌ Invalid JSON format.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to read file: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    var jsonInputText by remember { mutableStateOf("") }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -75,8 +38,8 @@ fun AddonsScreen(
         item {
             Text("Addons", style = MaterialTheme.typography.headlineMedium)
         }
-
-        // Addon URL Installation
+        
+        // 1. FIXED: Addon URL Installation Box (Strictly Single Line)
         item {
             OutlinedTextField(
                 value = addonUrl,
@@ -96,7 +59,7 @@ fun AddonsScreen(
                             addonUrl = ""
                             Toast.makeText(context, "✅ Addon Installed!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "❌ Install Failed", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "❌ Install Failed: Server blocked or invalid format.", Toast.LENGTH_LONG).show()
                         }
                     }
                 },
@@ -106,46 +69,22 @@ fun AddonsScreen(
             }
         }
 
-        // Recommended Addons
-        item {
-            Text("Recommended Addons", style = MaterialTheme.typography.titleMedium)
-            val recommended = listOf(
-                RecommendedAddon("Torrentio", "Torrent scraper", "https://torrentio.strem.fun/manifest.json"),
-                RecommendedAddon("Cinemeta", "Metadata provider", "https://cinemeta.strem.fun/manifest.json"),
-                RecommendedAddon("Juan Carlos 2", "4K sources", "https://juan-carlos.strem.fun/manifest.json"),
-                RecommendedAddon("Orion", "Premium scraper", "https://orion.strem.fun/manifest.json")
-            )
-            HScrollRow {
-                recommended.forEach { addon ->
-                    RecommendedAddonCard(
-                        addon = addon,
-                        onInstall = { url ->
-                            scope.launch {
-                                addonUrl = url
-                                val success = viewModel.installAddon(url)
-                                if (success) {
-                                    addonUrl = ""
-                                    Toast.makeText(context, "✅ Addon Installed!", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "❌ Install Failed", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Sync / Backup – now with Import/Export buttons
+        // 2. Import & Export JSON Array
         item {
             Text("Sync / Backup", style = MaterialTheme.typography.titleMedium)
+            
+            OutlinedTextField(
+                value = jsonInputText,
+                onValueChange = { jsonInputText = it },
+                label = { Text("Paste Import JSON here") },
+                modifier = Modifier.fillMaxWidth().height(120.dp),
+                minLines = 3,
+                maxLines = 5
+            )
+            
             Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                // Export JSON to clipboard (kept)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = {
                         val json = viewModel.exportAddonsJson()
@@ -156,49 +95,32 @@ fun AddonsScreen(
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Copy JSON")
+                    Text("Export JSON")
                 }
-                // Export to file – we'll use the same JSON but write to a file and share
                 Button(
                     onClick = {
-                        val json = viewModel.exportAddonsJson()
-                        if (json.isNotBlank()) {
-                            try {
-                                val file = File(context.cacheDir, "addons_backup.json")
-                                file.writeText(json)
-                                // Share the file
-                                val uri = androidx.core.content.FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    file
-                                )
-                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                    type = "application/json"
-                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Export Addons"))
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                        if (jsonInputText.isBlank()) {
+                            Toast.makeText(context, "Paste JSON code first!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        scope.launch {
+                            val success = viewModel.importAddonsJson(jsonInputText)
+                            if (success) {
+                                jsonInputText = ""
+                                Toast.makeText(context, "✅ Addons Imported!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "❌ Invalid JSON format.", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Export File")
+                    Text("Import JSON")
                 }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            // Import from file button
-            Button(
-                onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Import JSON from File")
             }
         }
 
-        // Debrid Settings
+        // 3. Debrid Settings
         item {
             Text("Real-Debrid Key", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
@@ -223,44 +145,7 @@ fun AddonsScreen(
             }
         }
 
-        // Debrid Provider
-        item {
-            Text("Debrid Provider", style = MaterialTheme.typography.titleMedium)
-            var expanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = !expanded }
-            ) {
-                OutlinedTextField(
-                    value = selectedProvider,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Select Provider") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor()
-                )
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    listOf("realdebrid", "alldebrid", "premiumize").forEach { provider ->
-                        DropdownMenuItem(
-                            text = { Text(provider.replaceFirstChar { it.uppercase() }) },
-                            onClick = {
-                                selectedProvider = provider
-                                expanded = false
-                                scope.launch {
-                                    viewModel.saveDebridProvider(provider)
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Installed Addons List
+        // 4. Installed Addons List
         item {
             Text("Installed Addons (${uiState.addons.size})", style = MaterialTheme.typography.titleMedium)
         }
@@ -278,9 +163,9 @@ fun AddonsScreen(
                     Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                         Text(addon.name, style = MaterialTheme.typography.titleSmall)
                         Text(
-                            text = addon.url,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
+                            text = addon.url, 
+                            style = MaterialTheme.typography.bodySmall, 
+                            maxLines = 1, 
                             overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -300,3 +185,4 @@ fun AddonsScreen(
         }
     }
 }
+

@@ -17,9 +17,10 @@ interface CachedMetaDao {
     @Query("DELETE FROM cached_meta")
     suspend fun deleteAll()
 
-    @Query("SELECT * FROM cached_meta")
+    @androidx.room.Query("SELECT * FROM cached_meta")
     suspend fun getAll(): List<CachedMeta>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
     suspend fun insertAll(metas: List<CachedMeta>)
 }
+

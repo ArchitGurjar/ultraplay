@@ -8,13 +8,13 @@ data class Addon(
     @PrimaryKey val id: String,
     val url: String,
     val name: String,
-    val catalogs: String,
+    val catalogs: String, // JSON string of List<Catalog>
     val enabled: Boolean = true,
     val required: Boolean = false
 )
 
 data class Catalog(
-    val type: String,
+    val type: String, // movie, series, anime, tv
     val id: String,
     val name: String,
     val extraSupported: List<String>? = null,
@@ -26,3 +26,4 @@ data class Extra(
     val isRequired: Boolean = false,
     val options: List<String>? = null
 )
+

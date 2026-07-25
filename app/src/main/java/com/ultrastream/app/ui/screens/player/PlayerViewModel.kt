@@ -1,7 +1,6 @@
 package com.ultrastream.app.ui.screens.player
 
 import android.content.Context
-import android.media.AudioManager
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,7 +9,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -20,9 +21,7 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
-import androidx.media3.session.MediaSession // ✅ नया import
 import com.ultrastream.app.data.models.StreamItem
-import com.ultrastream.app.data.models.Subtitle
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -35,7 +34,6 @@ import javax.inject.Inject
 
 data class AudioTrackInfo(val groupIndex: Int, val trackIndex: Int, val label: String, val language: String)
 data class SubtitleTrackInfo(val groupIndex: Int, val trackIndex: Int, val label: String, val language: String)
-data class Quality(val label: String, val resolution: String?, val bitrate: Int?)
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor() : ViewModel() {
@@ -73,36 +71,13 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
     private val _subtitleTracks = MutableStateFlow<List<SubtitleTrackInfo>>(emptyList())
     val subtitleTracks: StateFlow<List<SubtitleTrackInfo>> = _subtitleTracks.asStateFlow()
 
-    private val _availableQualities = MutableStateFlow<List<Quality>>(emptyList())
-    val availableQualities: StateFlow<List<Quality>> = _availableQualities.asStateFlow()
-
     private val _seekMessage = MutableStateFlow<String?>(null)
     val seekMessage: StateFlow<String?> = _seekMessage.asStateFlow()
 
-    private val _isLocked = MutableStateFlow(false)
-    val isLocked: StateFlow<Boolean> = _isLocked.asStateFlow()
-
-    private val _isFullscreen = MutableStateFlow(false)
-    val isFullscreen: StateFlow<Boolean> = _isFullscreen.asStateFlow()
-
     private var playerListener: Player.Listener? = null
     private var positionJob: Job? = null
-    private var currentContext: Context? = null
-    private var currentStream: StreamItem? = null
-    private var currentTitle: String? = null
-    private var mediaSession: MediaSession? = null // ✅ नया वेरिएबल
 
-    fun initializePlayer(context: Context, stream: StreamItem, title: String, externalSubtitle: Subtitle? = null) {
-        currentContext = context
-        currentStream = stream
-        currentTitle = title
-
-        // Volume fix: initialize with current system volume
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        _volume.value = if (maxVol > 0) currentVol.toFloat() / maxVol.toFloat() else 0.5f
-
+    fun initializePlayer(context: Context, stream: StreamItem, title: String) {
         viewModelScope.launch {
             try {
                 val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
@@ -121,7 +96,6 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
                     .setUri(Uri.parse(url))
                     .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
 
-                // Existing subtitles from stream
                 stream.subtitles?.let { subs ->
                     val configs = subs.mapNotNull { subtitle ->
                         val subUriStr = subtitle.url ?: return@mapNotNull null
@@ -142,30 +116,11 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
                     }
                 }
 
-                // External subtitle
-                if (externalSubtitle != null && !externalSubtitle.url.isNullOrBlank()) {
-                    val mimeType = when {
-                        externalSubtitle.url.endsWith(".vtt", ignoreCase = true) -> "text/vtt"
-                        externalSubtitle.url.endsWith(".srt", ignoreCase = true) -> "application/x-subrip"
-                        else -> "text/vtt"
-                    }
-                    val config = MediaItem.SubtitleConfiguration.Builder(Uri.parse(externalSubtitle.url))
-                        .setMimeType(mimeType)
-                        .setLanguage(externalSubtitle.lang ?: "und")
-                        .setLabel(externalSubtitle.name ?: externalSubtitle.lang ?: "External Subtitle")
-                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                        .build()
-                    mediaItemBuilder.setSubtitleConfigurations(listOf(config))
-                }
-
                 val mediaItem = mediaItemBuilder.build()
                 val mediaSource = createMediaSource(mediaItem, dataSourceFactory)
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
                 exoPlayer.playWhenReady = true
-
-                // ✅ MediaSession बनाएं ताकि नोटिफिकेशन और लॉक-स्क्रीन कंट्रोल्स काम करें
-                mediaSession = MediaSession.Builder(context, exoPlayer).build()
 
                 _player.value = exoPlayer
                 _title.value = title
@@ -190,60 +145,40 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
                     override fun onPlayerError(error: PlaybackException) {
                         _error.value = error.message
                     }
-
+                    
                     override fun onTracksChanged(tracks: Tracks) {
                         val audioList = mutableListOf<AudioTrackInfo>()
                         val subtitleList = mutableListOf<SubtitleTrackInfo>()
-                        val qualityList = mutableListOf<Quality>()
 
                         tracks.groups.forEachIndexed { groupIndex, trackGroup ->
-                            when (trackGroup.type) {
-                                C.TRACK_TYPE_AUDIO -> {
-                                    for (trackIndex in 0 until trackGroup.length) {
-                                        val format = trackGroup.getTrackFormat(trackIndex)
-                                        audioList.add(
-                                            AudioTrackInfo(
-                                                groupIndex = groupIndex,
-                                                trackIndex = trackIndex,
-                                                label = format.label ?: format.language ?: "Audio $trackIndex",
-                                                language = format.language ?: "und"
-                                            )
+                            if (trackGroup.type == C.TRACK_TYPE_AUDIO) {
+                                for (trackIndex in 0 until trackGroup.length) {
+                                    val format = trackGroup.getTrackFormat(trackIndex)
+                                    audioList.add(
+                                        AudioTrackInfo(
+                                            groupIndex = groupIndex,
+                                            trackIndex = trackIndex,
+                                            label = format.label ?: format.language ?: "Audio $trackIndex",
+                                            language = format.language ?: "und"
                                         )
-                                    }
+                                    )
                                 }
-                                C.TRACK_TYPE_TEXT -> {
-                                    for (trackIndex in 0 until trackGroup.length) {
-                                        val format = trackGroup.getTrackFormat(trackIndex)
-                                        subtitleList.add(
-                                            SubtitleTrackInfo(
-                                                groupIndex = groupIndex,
-                                                trackIndex = trackIndex,
-                                                label = format.label ?: format.language ?: "Subtitle $trackIndex",
-                                                language = format.language ?: "und"
-                                            )
+                            } else if (trackGroup.type == C.TRACK_TYPE_TEXT) {
+                                for (trackIndex in 0 until trackGroup.length) {
+                                    val format = trackGroup.getTrackFormat(trackIndex)
+                                    subtitleList.add(
+                                        SubtitleTrackInfo(
+                                            groupIndex = groupIndex,
+                                            trackIndex = trackIndex,
+                                            label = format.label ?: format.language ?: "Subtitle $trackIndex",
+                                            language = format.language ?: "und"
                                         )
-                                    }
-                                }
-                                C.TRACK_TYPE_VIDEO -> {
-                                    for (trackIndex in 0 until trackGroup.length) {
-                                        val format = trackGroup.getTrackFormat(trackIndex)
-                                        val resolution = if (format.height != null && format.width != null) {
-                                            "${format.height}p"
-                                        } else null
-                                        qualityList.add(
-                                            Quality(
-                                                label = format.label ?: "Quality",
-                                                resolution = resolution,
-                                                bitrate = format.bitrate
-                                            )
-                                        )
-                                    }
+                                    )
                                 }
                             }
                         }
                         _audioTracks.value = audioList
                         _subtitleTracks.value = subtitleList
-                        _availableQualities.value = qualityList
                     }
                 }
                 exoPlayer.addListener(listener)
@@ -354,6 +289,7 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
     fun selectAudioTrack(info: AudioTrackInfo) {
         val player = _player.value ?: return
         val group = player.currentTracks.groups.getOrNull(info.groupIndex) ?: return
+        
         val params = player.trackSelectionParameters.buildUpon()
             .setOverrideForType(
                 TrackSelectionOverride(group.mediaTrackGroup, listOf(info.trackIndex))
@@ -373,6 +309,7 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
     fun selectSubtitleTrack(info: SubtitleTrackInfo) {
         val player = _player.value ?: return
         val group = player.currentTracks.groups.getOrNull(info.groupIndex) ?: return
+        
         val params = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
             .setOverrideForType(
@@ -380,49 +317,6 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
             )
             .build()
         player.trackSelectionParameters = params
-    }
-
-    fun selectQuality(quality: Quality) {
-        val player = _player.value ?: return
-        val tracks = player.currentTracks
-
-        for (groupIndex in tracks.groups.indices) {
-            val trackGroup = tracks.groups[groupIndex]
-            if (trackGroup.type == C.TRACK_TYPE_VIDEO) {
-                val targetHeight = quality.resolution?.removeSuffix("p")?.toIntOrNull() ?: 0
-                var bestIndex = 0
-                var bestDiff = Int.MAX_VALUE
-
-                for (trackIndex in 0 until trackGroup.length) {
-                    val format = trackGroup.getTrackFormat(trackIndex)
-                    val height = format.height ?: 0
-                    val diff = kotlin.math.abs(height - targetHeight)
-                    if (diff < bestDiff) {
-                        bestDiff = diff
-                        bestIndex = trackIndex
-                    }
-                }
-
-                val override = TrackSelectionOverride(
-                    trackGroup.mediaTrackGroup,
-                    listOf(bestIndex)
-                )
-                val params = player.trackSelectionParameters.buildUpon()
-                    .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-                    .setOverrideForType(override)
-                    .build()
-                player.trackSelectionParameters = params
-                return
-            }
-        }
-    }
-
-    fun toggleLock() {
-        _isLocked.value = !_isLocked.value
-    }
-
-    fun toggleFullscreen() {
-        _isFullscreen.value = !_isFullscreen.value
     }
 
     fun releasePlayer() {
@@ -434,9 +328,6 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
         _player.value?.release()
         _player.value = null
         playerListener = null
-
-        // ✅ MediaSession को रिलीज़ करें
-        mediaSession?.release()
-        mediaSession = null
     }
 }
+

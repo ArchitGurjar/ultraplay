@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "UltraStream"
 include(":app")
+

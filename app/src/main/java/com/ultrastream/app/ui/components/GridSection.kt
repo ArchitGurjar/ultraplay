@@ -29,6 +29,7 @@ fun GridSection(
                         modifier = Modifier.weight(1f)
                     )
                 }
+                // Fill empty spaces to keep consistent grid width
                 val emptySpaces = 3 - rowItems.size
                 repeat(emptySpaces) {
                     Spacer(modifier = Modifier.weight(1f))
@@ -37,3 +38,4 @@ fun GridSection(
         }
     }
 }
+

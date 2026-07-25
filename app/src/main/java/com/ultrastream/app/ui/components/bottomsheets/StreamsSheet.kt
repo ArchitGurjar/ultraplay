@@ -8,7 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ultrastream.app.data.models.StreamItem
-import com.ultrastream.app.ui.components.StreamCard
 
 @Composable
 fun StreamsSheet(
@@ -25,13 +24,20 @@ fun StreamsSheet(
             LazyColumn {
                 items(streams.size) { index ->
                     val stream = streams[index]
-                    StreamCard(
-                        stream = stream,
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
                         onClick = { onStreamClick(stream) }
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    ) {
+                        Text(
+                            text = stream.title ?: stream.name ?: "Stream",
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
                 }
             }
         }
     }
 }
+

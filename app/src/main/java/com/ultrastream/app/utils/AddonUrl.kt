@@ -7,3 +7,4 @@ fun buildAddonBaseUrl(addonUrl: String): String {
     if (base.endsWith("/")) base = base.removeSuffix("/")
     return base
 }
+

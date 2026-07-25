@@ -27,3 +27,4 @@ interface LibraryDao {
     @Query("DELETE FROM library")
     suspend fun deleteAll()
 }
+

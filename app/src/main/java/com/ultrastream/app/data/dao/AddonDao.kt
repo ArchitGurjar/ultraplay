@@ -29,3 +29,4 @@ interface AddonDao {
     @Query("DELETE FROM addons")
     suspend fun deleteAll()
 }
+

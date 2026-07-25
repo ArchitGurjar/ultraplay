@@ -2,10 +2,6 @@ package com.ultrastream.app.di
 
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import com.ultrastream.app.network.AllDebridApi
-import com.ultrastream.app.network.PremiumizeApi
-import com.ultrastream.app.network.RealDebridApi
-import com.ultrastream.app.network.StremioApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -14,6 +10,10 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import com.ultrastream.app.network.StremioApi
+import com.ultrastream.app.network.RealDebridApi
+import com.ultrastream.app.network.AllDebridApi
+import com.ultrastream.app.network.PremiumizeApi
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -21,7 +21,13 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // provideMoshi() REMOVED – DatabaseModule already provides it
+    @Provides
+    @Singleton
+    fun provideMoshi(): Moshi {
+        return Moshi.Builder()
+            .add(KotlinJsonAdapterFactory())
+            .build()
+    }
 
     @Provides
     @Singleton
@@ -50,7 +56,7 @@ object NetworkModule {
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit {
         return Retrofit.Builder()
-            .baseUrl("https://v3-cinemeta.strem.io/")
+            .baseUrl("https://dummy.base.url/")
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
@@ -89,3 +95,4 @@ object NetworkModule {
             .create(PremiumizeApi::class.java)
     }
 }
+

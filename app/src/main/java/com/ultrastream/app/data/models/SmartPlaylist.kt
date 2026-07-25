@@ -14,7 +14,7 @@ data class SmartPlaylist(
     val total: Int,
     val fetched: Int,
     val status: String,
-    val episodesJson: String
+    val episodesJson: String // JSON string of List<PlaylistEpisode>
 )
 
 data class PlaylistEpisode(
@@ -24,3 +24,4 @@ data class PlaylistEpisode(
     val stream: StreamItem?,
     val isMissing: Boolean = false
 )
+

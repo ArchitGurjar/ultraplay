@@ -5,6 +5,7 @@ import retrofit2.http.Header
 import retrofit2.http.Query
 
 interface PremiumizeApi {
+
     @GET("transfer/create")
     suspend fun createTransfer(
         @Header("Authorization") auth: String,
@@ -83,3 +84,4 @@ data class PremiumizeContent(
     val type: String = "",
     val path: String = ""
 )
+

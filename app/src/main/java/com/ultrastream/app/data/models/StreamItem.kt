@@ -19,3 +19,8 @@ data class Subtitle(
     val lang: String?,
     val name: String?
 )
+
+data class StreamResponse(
+    val streams: List<StreamItem>
+)
+

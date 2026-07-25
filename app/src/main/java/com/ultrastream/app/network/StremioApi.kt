@@ -1,6 +1,5 @@
 package com.ultrastream.app.network
 
-import com.ultrastream.app.data.models.Catalog
 import retrofit2.http.GET
 import retrofit2.http.Url
 
@@ -28,6 +27,20 @@ data class ManifestResponse(
     val resources: List<String>?,
     val types: List<String>?,
     val version: String?
+)
+
+data class Catalog(
+    val type: String,
+    val id: String,
+    val name: String,
+    val extraSupported: List<String>? = null,
+    val extra: List<Extra>? = null
+)
+
+data class Extra(
+    val name: String,
+    val isRequired: Boolean = false,
+    val options: List<String>? = null
 )
 
 data class CatalogResponse(
@@ -92,3 +105,4 @@ data class StreamSubtitle(
 data class SubtitleResponse(
     val subtitles: List<StreamSubtitle>? = emptyList()
 )
+

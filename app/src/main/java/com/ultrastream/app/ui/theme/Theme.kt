@@ -33,8 +33,9 @@ fun UltraStreamTheme(
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
-        shapes = Shapes,
+        typography = Typography, // Uses Type.kt
+        shapes = Shapes, // Uses Shape.kt
         content = content
     )
 }
+

@@ -27,3 +27,4 @@ interface WatchlistDao {
     @Query("DELETE FROM watchlist")
     suspend fun deleteAll()
 }
+

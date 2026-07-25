@@ -1,14 +1,11 @@
 package com.ultrastream.app.data.repository
-import kotlinx.coroutines.flow.firstOrNull
 
 import com.ultrastream.app.data.models.StreamItem
 import com.ultrastream.app.data.models.Subtitle
-import com.ultrastream.app.data.preferences.PreferencesManager
 import com.ultrastream.app.network.StremioApi
+import com.ultrastream.app.network.Stream
 import com.ultrastream.app.utils.DebridHelper
-import com.ultrastream.app.utils.LinkVerifier
 import com.ultrastream.app.utils.StreamParser
-
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -19,9 +16,7 @@ import javax.inject.Singleton
 class StreamRepository @Inject constructor(
     private val stremioApi: StremioApi,
     private val debridHelper: DebridHelper,
-    private val linkVerifier: LinkVerifier,
-    private val streamParser: StreamParser,
-    private val preferencesManager: PreferencesManager  // ✅ added
+    private val streamParser: StreamParser
 ) {
 
     suspend fun getStreams(
@@ -43,7 +38,16 @@ class StreamRepository @Inject constructor(
             val deferred = addonUrls.map { url ->
                 async {
                     try {
-                        val baseUrl = buildAddonBaseUrl(url)
+                        var baseUrl = url
+                        if (baseUrl.endsWith("/manifest.json")) {
+                            baseUrl = baseUrl.substring(0, baseUrl.length - "/manifest.json".length)
+                        } else if (baseUrl.endsWith("manifest.json")) {
+                            baseUrl = baseUrl.substring(0, baseUrl.length - "manifest.json".length)
+                        }
+                        if (baseUrl.endsWith("/")) {
+                            baseUrl = baseUrl.substring(0, baseUrl.length - 1)
+                        }
+
                         val fullUrl = if (season != null && episode != null) {
                             "$baseUrl/stream/$metaType/$idWithExtra.json"
                         } else {
@@ -55,14 +59,7 @@ class StreamRepository @Inject constructor(
                             val addonName = extractAddonName(url)
                             val streamItem = convertStream(stream, addonName)
                             if (season != null && episode != null) {
-                                val textToCheck = buildString {
-                                    append(streamItem.title ?: "")
-                                    append(" ")
-                                    append(streamItem.name ?: "")
-                                    append(" ")
-                                    append(streamItem.description ?: "")
-                                }
-                                if (!streamParser.isValidEpisode(textToCheck, season, episode)) {
+                                if (!streamParser.isValidEpisode(streamItem, season, episode)) {
                                     return@mapNotNull null
                                 }
                             }
@@ -80,16 +77,11 @@ class StreamRepository @Inject constructor(
     }
 
     suspend fun resolveStream(stream: StreamItem, debridKey: String?): StreamItem {
-        val provider = when (preferencesManager.getDebridProvider().firstOrNull() ?: "realdebrid") {
-            "alldebrid" -> DebridHelper.DebridProvider.ALL_DEBRID
-            "premiumize" -> DebridHelper.DebridProvider.PREMIUMIZE
-            else -> DebridHelper.DebridProvider.REAL_DEBRID
-        }
-        val resolvedUrl = debridHelper.resolveStreamUrl(stream.url ?: "", debridKey, provider)
+        val resolvedUrl = debridHelper.resolveStreamUrl(stream.url ?: "", debridKey)
         return stream.copy(url = resolvedUrl)
     }
 
-    private fun convertStream(stream: com.ultrastream.app.network.Stream, addonName: String): StreamItem {
+    private fun convertStream(stream: Stream, addonName: String): StreamItem {
         return StreamItem(
             url = stream.url,
             streamUrl = stream.streamUrl,
@@ -115,12 +107,5 @@ class StreamRepository @Inject constructor(
         val parts = url.split("/")
         return parts.getOrElse(2) { "addon" }
     }
-
-    private fun buildAddonBaseUrl(addonUrl: String): String {
-        var base = addonUrl
-        if (base.endsWith("/manifest.json")) base = base.removeSuffix("/manifest.json")
-        else if (base.endsWith("manifest.json")) base = base.removeSuffix("manifest.json")
-        if (base.endsWith("/")) base = base.removeSuffix("/")
-        return base
-    }
 }
+
