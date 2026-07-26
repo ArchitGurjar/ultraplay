@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ultrastream.app.data.dao.*
 import com.ultrastream.app.data.models.Profile
 import com.ultrastream.app.data.preferences.PreferencesManager
+import com.ultrastream.app.domain.usecase.BackupRestoreUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +22,8 @@ class ProfileViewModel @Inject constructor(
     private val historyDao: HistoryDao,
     private val watchProgressDao: WatchProgressDao,
     private val addonDao: AddonDao,
-    private val profileDao: ProfileDao
+    private val profileDao: ProfileDao,
+    private val backupRestoreUseCase: BackupRestoreUseCase   // ✅ added
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -164,6 +166,24 @@ class ProfileViewModel @Inject constructor(
         _uiState.value = ProfileUiState()
     }
 
+    // ==================== BACKUP / RESTORE ====================
+
+    suspend fun exportBackup(): String? {
+        return try {
+            backupRestoreUseCase.exportData()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun importBackup(json: String): Boolean {
+        return try {
+            backupRestoreUseCase.importData(json)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     data class ProfileUiState(
         val theme: String = "dark",
         val hindiPriority: Boolean = true,
@@ -181,4 +201,3 @@ class ProfileViewModel @Inject constructor(
         val completionRate: Int = 0
     )
 }
-

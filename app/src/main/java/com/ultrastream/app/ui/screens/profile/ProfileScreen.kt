@@ -1,6 +1,8 @@
 package com.ultrastream.app.ui.screens.profile
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -9,11 +11,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ultrastream.app.ui.components.AnalyticsCard
 import kotlinx.coroutines.launch
+import java.io.InputStreamReader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,6 +33,32 @@ fun ProfileScreen(
     
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+
+    // File picker for import backup
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val reader = InputStreamReader(inputStream)
+                val json = reader.readText()
+                reader.close()
+                inputStream?.close()
+                scope.launch {
+                    val success = viewModel.importBackup(json)
+                    if (success) {
+                        Toast.makeText(context, "✅ Data restored successfully!", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "❌ Invalid backup file.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to read file: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -231,6 +262,63 @@ fun ProfileScreen(
             }
         }
 
+        // ==================== BACKUP / RESTORE ====================
+        item {
+            Text("Data Backup & Restore", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Export Backup
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val json = viewModel.exportBackup()
+                            if (!json.isNullOrBlank()) {
+                                clipboard.setText(AnnotatedString(json))
+                                Toast.makeText(context, "✅ Backup JSON copied to clipboard!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "❌ Failed to generate backup.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Copy Backup")
+                }
+                // Import Backup from file
+                Button(
+                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Restore from File")
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        val json = viewModel.exportBackup()
+                        if (!json.isNullOrBlank()) {
+                            // Share via intent
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(android.content.Intent.EXTRA_TEXT, json)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, "Share Backup"))
+                        } else {
+                            Toast.makeText(context, "❌ Failed to generate backup.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Share Backup (JSON)")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         // Factory Reset
         item {
             Button(
@@ -284,4 +372,3 @@ fun ProfileScreen(
         )
     }
 }
-
