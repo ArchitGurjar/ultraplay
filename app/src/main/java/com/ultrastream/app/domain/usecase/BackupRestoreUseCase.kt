@@ -6,14 +6,14 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.ultrastream.app.data.dao.*
 import com.ultrastream.app.data.models.*
 import com.ultrastream.app.data.preferences.PreferencesManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class BackupRestoreUseCase @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
     private val libraryDao: LibraryDao,
     private val watchlistDao: WatchlistDao,
     private val historyDao: HistoryDao,
