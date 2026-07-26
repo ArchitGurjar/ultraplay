@@ -12,7 +12,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyColumnItems
-import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,7 +38,6 @@ import com.ultrastream.app.data.models.StreamItem
 import com.ultrastream.app.data.models.Subtitle
 import com.ultrastream.app.ui.components.EpisodeCard
 import com.ultrastream.app.ui.components.bottomsheets.SeasonsSheet
-import com.ultrastream.app.ui.components.bottomsheets.StreamsSheet
 import com.ultrastream.app.ui.components.bottomsheets.SubtitlesSheet
 import com.ultrastream.app.ui.theme.*
 import com.ultrastream.app.utils.M3UExporter
@@ -75,6 +73,12 @@ fun DetailsScreen(
     val isAllSeasons by viewModel.isAllSeasons.collectAsState()
     val isSeries = meta?.type == "series" || meta?.type == "anime"
 
+    var episodesLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(filteredEpisodes) {
+        episodesLoading = filteredEpisodes.isEmpty()
+    }
+
     LaunchedEffect(id, type) {
         viewModel.loadMeta(id, type)
     }
@@ -89,8 +93,9 @@ fun DetailsScreen(
     }
 
     LaunchedEffect(uiState.streamsLoading, streamsRequested) {
-        if (!uiState.streamsLoading && streamsRequested && uiState.streams.isNotEmpty()) {
+        if (!uiState.streamsLoading && streamsRequested) {
             showStreamsSheet = true
+            streamsRequested = false
         }
     }
 
@@ -220,7 +225,6 @@ fun DetailsScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // MOVIE ACTION BUTTON
                             if (!isSeries) {
                                 Button(
                                     onClick = {
@@ -237,7 +241,6 @@ fun DetailsScreen(
                                 }
                             }
 
-                            // External Links
                             Column(modifier = Modifier.padding(top = 16.dp)) {
                                 OutlinedButton(
                                     onClick = {
@@ -277,7 +280,6 @@ fun DetailsScreen(
                     }
                 }
 
-                // Series Season Chips & Episodes
                 if (isSeries) {
                     item {
                         Row(
@@ -304,28 +306,35 @@ fun DetailsScreen(
 
                     item {
                         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            filteredEpisodes.forEach { video ->
-                                val epNum = video.episode ?: 0
-                                val seasonNum = video.season ?: 0
-                                val isWatched = uiState.watchProgress?.percent?.let { it >= 100 } ?: false
-                                val progressPercent = uiState.watchProgress?.percent ?: 0
+                            if (episodesLoading) {
+                                repeat(3) {
+                                    SkeletonEpisodeCard()
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
+                            } else {
+                                filteredEpisodes.forEach { video ->
+                                    val epNum = video.episode ?: 0
+                                    val seasonNum = video.season ?: 0
+                                    val isWatched = uiState.watchProgress?.percent?.let { it >= 100 } ?: false
+                                    val progressPercent = uiState.watchProgress?.percent ?: 0
 
-                                EpisodeCard(
-                                    video = video,
-                                    isWatched = isWatched,
-                                    progressPercent = progressPercent,
-                                    onClick = {
-                                        val currentMeta = uiState.meta
-                                        if (currentMeta != null) {
-                                            viewModel.selectEpisode(epNum)
-                                            viewModel.loadStreams(currentMeta.id, currentMeta.type, seasonNum, epNum)
-                                            streamsRequested = true
-                                        } else {
-                                            Toast.makeText(context, "Metadata not loaded", Toast.LENGTH_SHORT).show()
+                                    EpisodeCard(
+                                        video = video,
+                                        isWatched = isWatched,
+                                        progressPercent = progressPercent,
+                                        onClick = {
+                                            val currentMeta = uiState.meta
+                                            if (currentMeta != null) {
+                                                viewModel.selectEpisode(epNum)
+                                                viewModel.loadStreams(currentMeta.id, currentMeta.type, seasonNum, epNum)
+                                                streamsRequested = true
+                                            } else {
+                                                Toast.makeText(context, "Metadata not loaded", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
-                                    }
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
                             }
                         }
                     }
@@ -343,23 +352,69 @@ fun DetailsScreen(
         }
     }
 
-    // Streams Sheet
-    if (showStreamsSheet && uiState.streams.isNotEmpty()) {
-        StreamsSheet(
-            streams = uiState.streams,
-            onDismiss = {
+    if (showStreamsSheet) {
+        val streamList = if (uiState.streams.isNotEmpty()) {
+            uiState.streams
+        } else {
+            emptyList()
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = {
                 showStreamsSheet = false
                 streamsRequested = false
-            },
-            onStreamClick = { stream ->
-                showStreamsSheet = false
-                selectedStream = stream
-                showActionSheet = true
             }
-        )
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Text("Available Streams", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (streamList.isEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.Satellite, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("No streams found", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Make sure you have a stream addon installed (like Torrentio).",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    Toast.makeText(context, "Go to Addons screen and install Torrentio", Toast.LENGTH_LONG).show()
+                                    showStreamsSheet = false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
+                            ) {
+                                Text("Install Torrentio")
+                            }
+                        }
+                    }
+                } else {
+                    streamList.forEach { stream ->
+                        StreamCard(
+                            stream = stream,
+                            onClick = {
+                                showStreamsSheet = false
+                                selectedStream = stream
+                                showActionSheet = true
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
+        }
     }
 
-    // Action Sheet (Stream Actions)
     if (showActionSheet && selectedStream != null) {
         val stream = selectedStream!!
         val title = meta?.name ?: "Stream"
@@ -371,7 +426,6 @@ fun DetailsScreen(
                     onClick = {
                         showActionSheet = false
                         viewModel.playStream(stream, title) { resolved, t ->
-                            // Subtitle will be handled separately via SubtitleHolder
                             onPlay(resolved, t)
                         }
                     },
@@ -461,7 +515,6 @@ fun DetailsScreen(
         }
     }
 
-    // Subtitles Sheet
     if (showSubtitlesSheet && subtitlesList.isNotEmpty()) {
         SubtitlesSheet(
             subtitles = subtitlesList,
@@ -479,7 +532,6 @@ fun DetailsScreen(
         )
     }
 
-    // Seasons Sheet
     if (showSeasonsSheet) {
         val seasons = meta?.videos?.mapNotNull { it.season }?.distinct()?.sorted() ?: emptyList()
         SeasonsSheet(
@@ -494,3 +546,48 @@ fun DetailsScreen(
     }
 }
 
+@Composable
+fun SkeletonEpisodeCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(90.dp),
+        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .width(140.dp)
+                    .fillMaxHeight()
+                    .background(Color.Gray.copy(alpha = 0.3f))
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .weight(1f)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.7f)
+                        .height(16.dp)
+                        .background(Color.Gray.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .height(12.dp)
+                        .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.3f)
+                        .height(12.dp)
+                        .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                )
+            }
+        }
+    }
+}

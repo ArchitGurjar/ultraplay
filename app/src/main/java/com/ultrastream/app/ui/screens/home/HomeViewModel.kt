@@ -10,6 +10,7 @@ import com.ultrastream.app.data.models.RecommendedAddon
 import com.ultrastream.app.data.repository.AddonRepository
 import com.ultrastream.app.data.repository.MetaRepository
 import com.ultrastream.app.domain.usecase.GetHomeCatalogsUseCase
+import com.ultrastream.app.domain.usecase.InstallAddonUseCase
 import com.ultrastream.app.domain.usecase.UpdateWatchProgressUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +25,8 @@ class HomeViewModel @Inject constructor(
     private val getHomeCatalogsUseCase: GetHomeCatalogsUseCase,
     private val updateWatchProgressUseCase: UpdateWatchProgressUseCase,
     private val metaRepository: MetaRepository,
-    private val historyDao: HistoryDao
+    private val historyDao: HistoryDao,
+    private val installAddonUseCase: InstallAddonUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -32,6 +34,20 @@ class HomeViewModel @Inject constructor(
 
     init {
         loadHomeData()
+        ensureStreamAddonInstalled()
+    }
+
+    private fun ensureStreamAddonInstalled() {
+        viewModelScope.launch {
+            val addons = addonRepository.getAllAddons()
+            val hasTorrentio = addons.any { it.id == "com.torrentio" || it.url.contains("torrentio") }
+            if (!hasTorrentio) {
+                val torrentioUrl = "https://torrentio.strem.fun/manifest.json"
+                installAddonUseCase(torrentioUrl)
+                // optional: retry with fallback if needed
+                loadHomeData()
+            }
+        }
     }
 
     fun loadHomeData() {
