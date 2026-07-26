@@ -30,6 +30,8 @@ import com.ultrastream.app.ui.navigation.Screen
 import com.ultrastream.app.ui.screens.addons.AddonsScreen
 import com.ultrastream.app.ui.screens.catalog.CatalogScreen
 import com.ultrastream.app.ui.screens.details.DetailsScreen
+import com.ultrastream.app.ui.screens.download.DownloadScreen
+import com.ultrastream.app.ui.screens.download.DownloadViewModel
 import com.ultrastream.app.ui.screens.home.HomeScreen
 import com.ultrastream.app.ui.screens.library.LibraryScreen
 import com.ultrastream.app.ui.screens.player.PlayerScreen
@@ -37,6 +39,7 @@ import com.ultrastream.app.ui.screens.profile.ProfileScreen
 import com.ultrastream.app.ui.screens.search.SearchScreen
 import com.ultrastream.app.ui.theme.UltraStreamTheme
 import com.ultrastream.app.utils.StreamDataHolder
+import androidx.hilt.navigation.compose.hiltViewModel
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -54,6 +57,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun UltraStreamNavHost() {
         val navController = rememberNavController()
+        val downloadViewModel: DownloadViewModel = hiltViewModel()
+
         Scaffold(
             bottomBar = {
                 NavigationBar {
@@ -64,6 +69,7 @@ class MainActivity : ComponentActivity() {
                         Triple(Screen.Library, "Library", Icons.Default.VideoLibrary),
                         Triple(Screen.Search, "Search", Icons.Default.Search),
                         Triple(Screen.Addons, "Addons", Icons.Default.Extension),
+                        Triple(Screen.Downloads, "Downloads", Icons.Default.FileDownload),
                         Triple(Screen.Profile, "Profile", Icons.Default.Person)
                     )
                     items.forEach { (screen, title, iconVector) ->
@@ -101,33 +107,25 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
-
                 composable(Screen.Library.route) {
-                    LibraryScreen(
-                        onItemClick = { id, type ->
-                            navController.navigate(Screen.Details.pass(id, type))
-                        },
-                        onPlayStream = { stream, title ->
-                            StreamDataHolder.setStream(stream)
-                            navController.navigate(Screen.Player.pass(title))
-                        }
-                    )
+                    LibraryScreen { id, type ->
+                        navController.navigate(Screen.Details.pass(id, type))
+                    }
                 }
-
                 composable(Screen.Search.route) {
                     SearchScreen { id, type ->
                         navController.navigate(Screen.Details.pass(id, type))
                     }
                 }
-
                 composable(Screen.Addons.route) {
                     AddonsScreen()
                 }
-
+                composable(Screen.Downloads.route) {
+                    DownloadScreen()
+                }
                 composable(Screen.Profile.route) {
                     ProfileScreen()
                 }
-
                 composable(Screen.Details.route) { backStackEntry ->
                     val id = URLDecoder.decode(backStackEntry.arguments?.getString("id") ?: "", "UTF-8")
                     val type = URLDecoder.decode(backStackEntry.arguments?.getString("type") ?: "", "UTF-8")
@@ -138,10 +136,26 @@ class MainActivity : ComponentActivity() {
                         onPlay = { stream: StreamItem, title: String ->
                             StreamDataHolder.setStream(stream)
                             navController.navigate(Screen.Player.pass(title))
+                        },
+                        onDownload = { stream: StreamItem, title: String ->
+                            val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
+                            if (!url.isNullOrBlank()) {
+                                downloadViewModel.startDownload(
+                                    url = url,
+                                    title = title,
+                                    addonName = stream.addonName ?: "UltraStream",
+                                    metaId = id,
+                                    metaType = type
+                                )
+                                android.widget.Toast.makeText(
+                                    this@MainActivity,
+                                    "Download started: $title",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     )
                 }
-
                 composable(Screen.Player.route) { backStackEntry ->
                     val title = URLDecoder.decode(backStackEntry.arguments?.getString("title") ?: "", "UTF-8")
                     val stream = StreamDataHolder.currentStream
@@ -158,7 +172,6 @@ class MainActivity : ComponentActivity() {
                         navController.popBackStack()
                     }
                 }
-
                 composable(Screen.Catalog.route) { backStackEntry ->
                     val rowId = URLDecoder.decode(backStackEntry.arguments?.getString("rowId") ?: "", "UTF-8")
                     val title = URLDecoder.decode(backStackEntry.arguments?.getString("title") ?: "", "UTF-8")
@@ -186,4 +199,3 @@ class MainActivity : ComponentActivity() {
 object CatalogDataHolder {
     var items: List<MetaItem> = emptyList()
 }
-

@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyColumnItems
 import androidx.compose.foundation.lazy.grid.*
@@ -43,6 +44,7 @@ import com.ultrastream.app.ui.components.bottomsheets.StreamsSheet
 import com.ultrastream.app.ui.components.bottomsheets.SubtitlesSheet
 import com.ultrastream.app.ui.theme.*
 import com.ultrastream.app.utils.M3UExporter
+import com.ultrastream.app.ui.screens.download.DownloadViewModel
 import com.ultrastream.app.utils.SubtitleEvent
 import com.ultrastream.app.utils.SubtitleHolder
 import kotlinx.coroutines.launch
@@ -53,7 +55,8 @@ fun DetailsScreen(
     type: String,
     viewModel: DetailsViewModel = hiltViewModel(),
     onBack: () -> Unit,
-    onPlay: (stream: StreamItem, title: String) -> Unit
+    onPlay: (stream: StreamItem, title: String) -> Unit,
+    onDownload: (stream: StreamItem, title: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -386,6 +389,35 @@ fun DetailsScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Download button
+
+                Button(
+
+                    onClick = {
+
+                        onDownload(stream, title)
+
+                        showActionSheet = false
+
+                    },
+
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+
+                    shape = RoundedCornerShape(16.dp)
+
+                ) {
+
+                    Icon(Icons.Default.FileDownload, contentDescription = null)
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text("Download Video", fontWeight = FontWeight.Bold)
+
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
                 val actions = mutableListOf<Pair<String, () -> Unit>>()
 
                 if (uiState.selectedEpisode != null && uiState.selectedSeason != null && isSeries && meta != null) {
