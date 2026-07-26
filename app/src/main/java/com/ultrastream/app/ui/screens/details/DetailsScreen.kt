@@ -37,6 +37,7 @@ import coil.compose.AsyncImage
 import com.ultrastream.app.data.models.StreamItem
 import com.ultrastream.app.data.models.Subtitle
 import com.ultrastream.app.ui.components.EpisodeCard
+import com.ultrastream.app.ui.components.StreamCard   // ✅ ADD THIS IMPORT
 import com.ultrastream.app.ui.components.bottomsheets.SeasonsSheet
 import com.ultrastream.app.ui.components.bottomsheets.SubtitlesSheet
 import com.ultrastream.app.ui.theme.*
@@ -352,12 +353,9 @@ fun DetailsScreen(
         }
     }
 
+    // Custom Stream Sheet – always opens
     if (showStreamsSheet) {
-        val streamList = if (uiState.streams.isNotEmpty()) {
-            uiState.streams
-        } else {
-            emptyList()
-        }
+        val streamList = if (uiState.streams.isNotEmpty()) uiState.streams else emptyList()
 
         ModalBottomSheet(
             onDismissRequest = {
@@ -415,6 +413,7 @@ fun DetailsScreen(
         }
     }
 
+    // Action Sheet (Stream Actions)
     if (showActionSheet && selectedStream != null) {
         val stream = selectedStream!!
         val title = meta?.name ?: "Stream"
@@ -515,6 +514,7 @@ fun DetailsScreen(
         }
     }
 
+    // Subtitles Sheet
     if (showSubtitlesSheet && subtitlesList.isNotEmpty()) {
         SubtitlesSheet(
             subtitles = subtitlesList,
@@ -532,6 +532,7 @@ fun DetailsScreen(
         )
     }
 
+    // Seasons Sheet
     if (showSeasonsSheet) {
         val seasons = meta?.videos?.mapNotNull { it.season }?.distinct()?.sorted() ?: emptyList()
         SeasonsSheet(
