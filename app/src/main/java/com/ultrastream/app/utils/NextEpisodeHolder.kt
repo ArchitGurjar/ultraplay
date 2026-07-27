@@ -1,6 +1,5 @@
 package com.ultrastream.app.utils
 
-import com.ultrastream.app.utils.StreamDataHolder.NextEpisodeInfo   // ✅ Import from StreamDataHolder
 
 object NextEpisodeHolder {
     private var _nextEpisode: NextEpisodeInfo? = null

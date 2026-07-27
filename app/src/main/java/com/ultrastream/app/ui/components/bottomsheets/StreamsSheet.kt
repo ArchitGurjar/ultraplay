@@ -12,7 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ultrastream.app.data.models.StreamItem
-import com.ultrastream.app.ui.components.ShimerPlaceholder  // ✅ FIXED: import name corrected to ShimmerPlaceholder
+import com.ultrastream.app.ui.components.ShimmerPlaceholder  // ✅ FIXED: import name corrected to ShimmerPlaceholder
 import com.ultrastream.app.ui.components.StreamCard
 
 @Composable
