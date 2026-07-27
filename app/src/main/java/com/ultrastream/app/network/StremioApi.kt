@@ -22,10 +22,10 @@ interface StremioApi {
 }
 
 data class ManifestResponse(
-    val id: String,
-    val name: String,
+    val id: String?,
+    val name: String?,
     val catalogs: List<Catalog>?,
-    val resources: List<String>?,
+    val resources: List<Any>?,
     val types: List<String>?,
     val version: String?
 )
@@ -53,6 +53,7 @@ data class Meta(
     val runtime: String?,
     val cast: List<String>?,
     val imdb_id: String?,
+    val certification: String?,
     val videos: List<Video>? = null
 )
 

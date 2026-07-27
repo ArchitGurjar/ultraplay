@@ -10,23 +10,26 @@ import com.ultrastream.app.data.models.MetaItem
 fun GridSection(
     items: List<MetaItem>,
     onItemClick: (id: String, type: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    progressMap: Map<String, Int> = emptyMap()
 ) {
     Column(
-        modifier = modifier.padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         val chunkedItems = items.chunked(3)
         chunkedItems.forEach { rowItems ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 rowItems.forEach { item ->
                     PosterCard(
                         meta = item,
                         onClick = { onItemClick(item.id, item.type) },
-                        modifier = Modifier.weight(1f)
+                        showProgress = true,
+                        progressPercent = progressMap[item.id] ?: 0,
+                        modifier = Modifier.weight(1f).aspectRatio(0.67f)
                     )
                 }
                 val emptySpaces = 3 - rowItems.size

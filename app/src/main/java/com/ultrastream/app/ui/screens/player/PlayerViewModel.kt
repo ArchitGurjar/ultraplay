@@ -15,20 +15,27 @@ import androidx.media3.common.Tracks
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.dash.DashMediaSource
-import androidx.media3.exoplayer.hls.HlsMediaSource
-import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
-import androidx.media3.session.MediaSession // ✅ नया import
+import androidx.media3.session.MediaSession
 import com.ultrastream.app.data.models.StreamItem
 import com.ultrastream.app.data.models.Subtitle
+import com.ultrastream.app.data.preferences.PreferencesManager
+import com.ultrastream.app.data.repository.MetaRepository
+import com.ultrastream.app.domain.usecase.GetStreamsUseCase
+import com.ultrastream.app.utils.LinkVerifier
+import com.ultrastream.app.utils.PlayerContext
+import com.ultrastream.app.utils.StreamParser
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,11 +44,23 @@ data class AudioTrackInfo(val groupIndex: Int, val trackIndex: Int, val label: S
 data class SubtitleTrackInfo(val groupIndex: Int, val trackIndex: Int, val label: String, val language: String)
 data class Quality(val label: String, val resolution: String?, val bitrate: Int?)
 
+sealed class PlayerEvent {
+    object PlaybackEnded : PlayerEvent()
+}
+
 @HiltViewModel
-class PlayerViewModel @Inject constructor() : ViewModel() {
+class PlayerViewModel @Inject constructor(
+    private val preferencesManager: PreferencesManager,
+    private val metaRepository: MetaRepository,
+    private val getStreamsUseCase: GetStreamsUseCase,
+    private val linkVerifier: LinkVerifier
+) : ViewModel() {
 
     private val _player = MutableStateFlow<ExoPlayer?>(null)
     val player: StateFlow<ExoPlayer?> = _player.asStateFlow()
+
+    private val _events = MutableSharedFlow<PlayerEvent>()
+    val events: SharedFlow<PlayerEvent> = _events.asSharedFlow()
 
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
@@ -85,184 +104,317 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
     private val _isFullscreen = MutableStateFlow(false)
     val isFullscreen: StateFlow<Boolean> = _isFullscreen.asStateFlow()
 
+    // New states for quality/language
+    private val _isLoadingStreams = MutableStateFlow(false)
+    val isLoadingStreams: StateFlow<Boolean> = _isLoadingStreams.asStateFlow()
+
+    private val _availableLanguages = MutableStateFlow<List<String>>(emptyList())
+    val availableLanguages: StateFlow<List<String>> = _availableLanguages.asStateFlow()
+
+    private val _availableQualitiesFromStreams = MutableStateFlow<List<String>>(emptyList())
+    val availableQualitiesFromStreams: StateFlow<List<String>> = _availableQualitiesFromStreams.asStateFlow()
+
+    private val _currentQuality = MutableStateFlow(PlayerContext.currentQuality)
+    val currentQuality: StateFlow<String> = _currentQuality.asStateFlow()
+
+    private val _currentLanguage = MutableStateFlow(PlayerContext.currentLanguage)
+    val currentLanguage: StateFlow<String> = _currentLanguage.asStateFlow()
+
+    // Internal storage
+    private var lastStreams: List<StreamItem> = emptyList()
+    private var lastTitle: String = ""
+    private var lastContext: Context? = null
+    private var lastSubtitle: Subtitle? = null
+    private var currentMetaId: String = ""
+    private var currentMetaType: String = ""
+    private var currentSeason: Int? = null
+    private var currentEpisode: Int? = null
+    private var nextEpisodePreFetched: StreamItem? = null
+    private var preFetchJob: Job? = null
+
     private var playerListener: Player.Listener? = null
     private var positionJob: Job? = null
-    private var currentContext: Context? = null
-    private var currentStream: StreamItem? = null
-    private var currentTitle: String? = null
-    private var mediaSession: MediaSession? = null // ✅ नया वेरिएबल
+    private var mediaSession: MediaSession? = null
+    private var nextEpisodeListener: ((StreamItem, String) -> Unit)? = null
 
-    fun initializePlayer(context: Context, stream: StreamItem, title: String, externalSubtitle: Subtitle? = null) {
-        currentContext = context
-        currentStream = stream
-        currentTitle = title
+    private val qualityOrder = listOf("2160p", "1080p", "720p", "480p", "360p")
+    private val parser = StreamParser()
 
-        // Volume fix: initialize with current system volume
+    fun setNextEpisodeListener(listener: (StreamItem, String) -> Unit) {
+        nextEpisodeListener = listener
+    }
+
+    suspend fun initializePlayer(
+        context: Context,
+        streams: List<StreamItem>,
+        title: String,
+        externalSubtitle: Subtitle? = null,
+        metaId: String? = null,
+        metaType: String? = null,
+        season: Int? = null,
+        episode: Int? = null
+    ) {
+        lastContext = context
+        lastStreams = streams
+        lastTitle = title
+        lastSubtitle = externalSubtitle
+        currentMetaId = metaId ?: PlayerContext.metaId
+        currentMetaType = metaType ?: PlayerContext.metaType
+        currentSeason = season ?: PlayerContext.season
+        currentEpisode = episode ?: PlayerContext.episode
+
+        // Set initial quality/language from context (if not already set)
+        if (_currentQuality.value.isBlank()) {
+            // Try to extract quality from first stream
+            val firstStream = streams.firstOrNull()
+            if (firstStream != null) {
+                val quality = parser.extractQuality(firstStream)
+                if (quality != null) {
+                    _currentQuality.value = quality
+                    PlayerContext.currentQuality = quality
+                }
+            }
+        }
+        if (_currentLanguage.value.isBlank()) {
+            _currentLanguage.value = "Hindi"
+            PlayerContext.currentLanguage = "Hindi"
+        }
+
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         _volume.value = if (maxVol > 0) currentVol.toFloat() / maxVol.toFloat() else 0.5f
 
-        viewModelScope.launch {
-            try {
-                val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
-                if (url.isNullOrBlank()) {
-                    _error.value = "No valid stream URL"
-                    return@launch
-                }
+        try {
+            if (streams.isEmpty()) {
+                _error.value = "No streams to play"
+                return
+            }
 
-                val trackSelector = DefaultTrackSelector(context)
-                val exoPlayer = ExoPlayer.Builder(context)
-                    .setTrackSelector(trackSelector)
-                    .build()
+            // Verify and filter streams
+            val verifiedStreams = verifyStreams(streams)
+            if (verifiedStreams.isEmpty()) {
+                _error.value = "No working streams found. Please try another source."
+                return
+            }
 
-                val dataSourceFactory = createDataSourceFactory()
-                val mediaItemBuilder = MediaItem.Builder()
-                    .setUri(Uri.parse(url))
-                    .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
+            // Extract available qualities from verified streams
+            val qualities = extractQualities(verifiedStreams)
+            _availableQualitiesFromStreams.value = qualities
 
-                // Existing subtitles from stream
-                stream.subtitles?.let { subs ->
-                    val configs = subs.mapNotNull { subtitle ->
-                        val subUriStr = subtitle.url ?: return@mapNotNull null
-                        val mimeType = when {
-                            subUriStr.endsWith(".vtt", ignoreCase = true) -> "text/vtt"
-                            subUriStr.endsWith(".srt", ignoreCase = true) -> "application/x-subrip"
-                            else -> "text/vtt"
-                        }
-                        MediaItem.SubtitleConfiguration.Builder(Uri.parse(subUriStr))
-                            .setMimeType(mimeType)
-                            .setLanguage(subtitle.lang ?: "und")
-                            .setLabel(subtitle.name ?: subtitle.lang ?: "Subtitle")
-                            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                            .build()
-                    }
-                    if (configs.isNotEmpty()) {
-                        mediaItemBuilder.setSubtitleConfigurations(configs)
-                    }
-                }
+            // Extract languages
+            extractLanguages(verifiedStreams)
 
-                // External subtitle
-                if (externalSubtitle != null && !externalSubtitle.url.isNullOrBlank()) {
+            // Build player with verified streams
+            buildPlayer(context, verifiedStreams, title, externalSubtitle)
+
+            // Pre‑fetch next episode if available
+            preFetchNextEpisode()
+
+        } catch (e: Exception) {
+            _error.value = e.message
+        }
+    }
+
+    private suspend fun verifyStreams(streams: List<StreamItem>): List<StreamItem> {
+        val verified = mutableListOf<StreamItem>()
+        for (stream in streams) {
+            val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
+            if (url.isNullOrBlank()) continue
+            if (url.startsWith("magnet:", ignoreCase = true)) {
+                verified.add(stream)
+                continue
+            }
+            if (linkVerifier.verifyLink(url)) {
+                verified.add(stream)
+            }
+        }
+        return verified
+    }
+
+    private fun extractQualities(streams: List<StreamItem>): List<String> {
+        val qualitySet = mutableSetOf<String>()
+        streams.forEach { stream ->
+            val text = buildString {
+                append(stream.title ?: "")
+                append(" ")
+                append(stream.name ?: "")
+                append(" ")
+                append(stream.description ?: "")
+            }
+            val parsed = parser.parseMetadata(text)
+            qualitySet.addAll(parsed.quals)
+        }
+        return qualitySet.sortedWith(compareBy { 
+            qualityOrder.indexOf(it)
+        }).filter { it.isNotEmpty() }
+    }
+
+    private suspend fun buildPlayer(
+        context: Context,
+        streams: List<StreamItem>,
+        title: String,
+        externalSubtitle: Subtitle?
+    ) {
+        val trackSelector = DefaultTrackSelector(context)
+        val dataSourceFactory = createDataSourceFactory()
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+
+        val exoPlayer = ExoPlayer.Builder(context)
+            .setTrackSelector(trackSelector)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build()
+
+        val mediaItems = streams.map { stream ->
+            val url = stream.url ?: stream.streamUrl ?: stream.externalUrl ?: ""
+            val mediaItemBuilder = MediaItem.Builder()
+                .setUri(Uri.parse(url))
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(stream.title ?: title).build())
+
+            stream.subtitles?.let { subs ->
+                val configs = subs.mapNotNull { subtitle ->
+                    val subUriStr = subtitle.url ?: return@mapNotNull null
                     val mimeType = when {
-                        externalSubtitle.url.endsWith(".vtt", ignoreCase = true) -> "text/vtt"
-                        externalSubtitle.url.endsWith(".srt", ignoreCase = true) -> "application/x-subrip"
+                        subUriStr.endsWith(".vtt", ignoreCase = true) -> "text/vtt"
+                        subUriStr.endsWith(".srt", ignoreCase = true) -> "application/x-subrip"
                         else -> "text/vtt"
                     }
-                    val config = MediaItem.SubtitleConfiguration.Builder(Uri.parse(externalSubtitle.url))
+                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(subUriStr))
                         .setMimeType(mimeType)
-                        .setLanguage(externalSubtitle.lang ?: "und")
-                        .setLabel(externalSubtitle.name ?: externalSubtitle.lang ?: "External Subtitle")
+                        .setLanguage(subtitle.lang ?: "und")
+                        .setLabel(subtitle.name ?: subtitle.lang ?: "Subtitle")
                         .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                         .build()
-                    mediaItemBuilder.setSubtitleConfigurations(listOf(config))
                 }
+                if (configs.isNotEmpty()) {
+                    mediaItemBuilder.setSubtitleConfigurations(configs)
+                }
+            }
 
-                val mediaItem = mediaItemBuilder.build()
-                val mediaSource = createMediaSource(mediaItem, dataSourceFactory)
-                exoPlayer.setMediaSource(mediaSource)
-                exoPlayer.prepare()
-                exoPlayer.playWhenReady = true
+            if (externalSubtitle != null && !externalSubtitle.url.isNullOrBlank()) {
+                val mimeType = when {
+                    externalSubtitle.url.endsWith(".vtt", ignoreCase = true) -> "text/vtt"
+                    externalSubtitle.url.endsWith(".srt", ignoreCase = true) -> "application/x-subrip"
+                    else -> "text/vtt"
+                }
+                val config = MediaItem.SubtitleConfiguration.Builder(Uri.parse(externalSubtitle.url))
+                    .setMimeType(mimeType)
+                    .setLanguage(externalSubtitle.lang ?: "und")
+                    .setLabel(externalSubtitle.name ?: externalSubtitle.lang ?: "External Subtitle")
+                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                    .build()
+                mediaItemBuilder.setSubtitleConfigurations(listOf(config))
+            }
+            mediaItemBuilder.build()
+        }
 
-                // ✅ MediaSession बनाएं ताकि नोटिफिकेशन और लॉक-स्क्रीन कंट्रोल्स काम करें
-                mediaSession = MediaSession.Builder(context, exoPlayer).build()
+        exoPlayer.setMediaItems(mediaItems)
+        exoPlayer.prepare()
+        exoPlayer.playWhenReady = true
 
-                _player.value = exoPlayer
-                _title.value = title
+        mediaSession = MediaSession.Builder(context, exoPlayer).build()
 
-                val listener = object : Player.Listener {
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        when (playbackState) {
-                            Player.STATE_READY -> {
-                                _duration.value = exoPlayer.duration
-                                _isPlaying.value = exoPlayer.isPlaying
+        _player.value = exoPlayer
+        _title.value = title
+
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                when (playbackState) {
+                    Player.STATE_READY -> {
+                        _duration.value = exoPlayer.duration
+                        _isPlaying.value = exoPlayer.isPlaying
+                    }
+                    Player.STATE_ENDED -> {
+                        _isPlaying.value = false
+                        viewModelScope.launch {
+                            if (preferencesManager.getAutoPlayNext().firstOrNull() == true) {
+                                playNextEpisode()
+                                _events.emit(PlayerEvent.PlaybackEnded)
                             }
-                            Player.STATE_ENDED -> {
-                                _isPlaying.value = false
+                        }
+                    }
+                }
+            }
+
+            override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                _title.value = mediaMetadata.title?.toString() ?: title
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                _isPlaying.value = isPlaying
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                _error.value = error.message
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                val audioList = mutableListOf<AudioTrackInfo>()
+                val subtitleList = mutableListOf<SubtitleTrackInfo>()
+                val qualityList = mutableListOf<Quality>()
+
+                tracks.groups.forEachIndexed { groupIndex, trackGroup ->
+                    when (trackGroup.type) {
+                        C.TRACK_TYPE_AUDIO -> {
+                            for (trackIndex in 0 until trackGroup.length) {
+                                val format = trackGroup.getTrackFormat(trackIndex)
+                                audioList.add(
+                                    AudioTrackInfo(
+                                        groupIndex = groupIndex,
+                                        trackIndex = trackIndex,
+                                        label = format.label ?: format.language ?: "Audio $trackIndex",
+                                        language = format.language ?: "und"
+                                    )
+                                )
+                            }
+                        }
+                        C.TRACK_TYPE_TEXT -> {
+                            for (trackIndex in 0 until trackGroup.length) {
+                                val format = trackGroup.getTrackFormat(trackIndex)
+                                subtitleList.add(
+                                    SubtitleTrackInfo(
+                                        groupIndex = groupIndex,
+                                        trackIndex = trackIndex,
+                                        label = format.label ?: format.language ?: "Subtitle $trackIndex",
+                                        language = format.language ?: "und"
+                                    )
+                                )
+                            }
+                        }
+                        C.TRACK_TYPE_VIDEO -> {
+                            for (trackIndex in 0 until trackGroup.length) {
+                                val format = trackGroup.getTrackFormat(trackIndex)
+                                val resolution = if (format.height != C.LENGTH_UNSET) {
+                                    "${format.height}p"
+                                } else null
+                                qualityList.add(
+                                    Quality(
+                                        label = format.label ?: "Quality",
+                                        resolution = resolution,
+                                        bitrate = format.bitrate
+                                    )
+                                )
                             }
                         }
                     }
-
-                    override fun onIsPlayingChanged(isPlaying: Boolean) {
-                        _isPlaying.value = isPlaying
-                    }
-
-                    override fun onPlayerError(error: PlaybackException) {
-                        _error.value = error.message
-                    }
-
-                    override fun onTracksChanged(tracks: Tracks) {
-                        val audioList = mutableListOf<AudioTrackInfo>()
-                        val subtitleList = mutableListOf<SubtitleTrackInfo>()
-                        val qualityList = mutableListOf<Quality>()
-
-                        tracks.groups.forEachIndexed { groupIndex, trackGroup ->
-                            when (trackGroup.type) {
-                                C.TRACK_TYPE_AUDIO -> {
-                                    for (trackIndex in 0 until trackGroup.length) {
-                                        val format = trackGroup.getTrackFormat(trackIndex)
-                                        audioList.add(
-                                            AudioTrackInfo(
-                                                groupIndex = groupIndex,
-                                                trackIndex = trackIndex,
-                                                label = format.label ?: format.language ?: "Audio $trackIndex",
-                                                language = format.language ?: "und"
-                                            )
-                                        )
-                                    }
-                                }
-                                C.TRACK_TYPE_TEXT -> {
-                                    for (trackIndex in 0 until trackGroup.length) {
-                                        val format = trackGroup.getTrackFormat(trackIndex)
-                                        subtitleList.add(
-                                            SubtitleTrackInfo(
-                                                groupIndex = groupIndex,
-                                                trackIndex = trackIndex,
-                                                label = format.label ?: format.language ?: "Subtitle $trackIndex",
-                                                language = format.language ?: "und"
-                                            )
-                                        )
-                                    }
-                                }
-                                C.TRACK_TYPE_VIDEO -> {
-                                    for (trackIndex in 0 until trackGroup.length) {
-                                        val format = trackGroup.getTrackFormat(trackIndex)
-                                        val resolution = if (format.height != null && format.width != null) {
-                                            "${format.height}p"
-                                        } else null
-                                        qualityList.add(
-                                            Quality(
-                                                label = format.label ?: "Quality",
-                                                resolution = resolution,
-                                                bitrate = format.bitrate
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        _audioTracks.value = audioList
-                        _subtitleTracks.value = subtitleList
-                        _availableQualities.value = qualityList
-                    }
                 }
-                exoPlayer.addListener(listener)
-                playerListener = listener
+                _audioTracks.value = audioList
+                _subtitleTracks.value = subtitleList
+                _availableQualities.value = qualityList
+            }
+        }
+        exoPlayer.addListener(listener)
+        playerListener = listener
 
-                positionJob?.cancel()
-                positionJob = viewModelScope.launch {
-                    while (isActive) {
-                        try {
-                            _currentPosition.value = exoPlayer.currentPosition
-                        } catch (e: IllegalStateException) {
-                            break
-                        }
-                        delay(200)
-                    }
+        positionJob?.cancel()
+        positionJob = viewModelScope.launch {
+            while (isActive) {
+                try {
+                    _currentPosition.value = exoPlayer.currentPosition
+                } catch (e: IllegalStateException) {
+                    break
                 }
-
-            } catch (e: Exception) {
-                _error.value = e.message
+                delay(200)
             }
         }
     }
@@ -275,15 +427,186 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
             .setReadTimeoutMs(60_000)
     }
 
-    private fun createMediaSource(mediaItem: MediaItem, dataSourceFactory: DataSource.Factory): MediaSource {
-        val uri = mediaItem.localConfiguration?.uri ?: Uri.EMPTY
-        val url = uri.toString()
-        return when {
-            url.contains(".m3u8") -> HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
-            url.contains(".mpd") -> DashMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
-            else -> ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+    // ── Quality / Language Switching ──
+
+    fun changeQuality(quality: String) {
+        viewModelScope.launch {
+            if (_isLoadingStreams.value) return@launch
+            _isLoadingStreams.value = true
+            _error.value = null
+            try {
+                val streams = fetchStreamsForCurrentEpisode(quality, _currentLanguage.value)
+                if (streams.isNotEmpty()) {
+                    val verified = verifyStreams(streams)
+                    if (verified.isNotEmpty()) {
+                        _currentQuality.value = quality
+                        PlayerContext.currentQuality = quality
+                        val context = lastContext ?: return@launch
+                        // Update available languages based on new streams
+                        extractLanguages(verified)
+                        // Update available qualities
+                        _availableQualitiesFromStreams.value = extractQualities(verified)
+                        buildPlayer(context, verified, lastTitle, lastSubtitle)
+                        _isLoadingStreams.value = false
+                        return@launch
+                    }
+                }
+                // If we reach here, quality not found – try fallback
+                val fallbackQuality = getFallbackQuality(quality)
+                if (fallbackQuality != null) {
+                    changeQuality(fallbackQuality) // Recursive fallback
+                } else {
+                    _error.value = "Quality $quality not available. No fallback found."
+                    _isLoadingStreams.value = false
+                }
+            } catch (e: Exception) {
+                _error.value = "Failed to change quality: ${e.message}"
+                _isLoadingStreams.value = false
+            }
         }
     }
+
+    fun changeLanguage(language: String) {
+        viewModelScope.launch {
+            if (_isLoadingStreams.value) return@launch
+            _isLoadingStreams.value = true
+            _error.value = null
+            try {
+                val streams = fetchStreamsForCurrentEpisode(_currentQuality.value, language)
+                if (streams.isNotEmpty()) {
+                    val verified = verifyStreams(streams)
+                    if (verified.isNotEmpty()) {
+                        _currentLanguage.value = language
+                        PlayerContext.currentLanguage = language
+                        val context = lastContext ?: return@launch
+                        // Update available languages based on new streams
+                        extractLanguages(verified)
+                        // Update available qualities
+                        _availableQualitiesFromStreams.value = extractQualities(verified)
+                        buildPlayer(context, verified, lastTitle, lastSubtitle)
+                        _isLoadingStreams.value = false
+                        return@launch
+                    }
+                }
+                _error.value = "Language $language not available for current quality."
+                _isLoadingStreams.value = false
+            } catch (e: Exception) {
+                _error.value = "Failed to change language: ${e.message}"
+                _isLoadingStreams.value = false
+            }
+        }
+    }
+
+    private suspend fun fetchStreamsForCurrentEpisode(quality: String, language: String): List<StreamItem> {
+        if (currentMetaId.isBlank() || currentSeason == null || currentEpisode == null) {
+            return emptyList()
+        }
+        return getStreamsUseCase(
+            metaId = currentMetaId,
+            metaType = currentMetaType,
+            season = currentSeason,
+            episode = currentEpisode,
+            quality = quality,
+            language = language
+        )
+    }
+
+    private fun getFallbackQuality(quality: String): String? {
+        val index = qualityOrder.indexOf(quality)
+        if (index < 0) return qualityOrder.lastOrNull()
+        // Try next lower quality
+        val nextIndex = index + 1
+        return if (nextIndex < qualityOrder.size) qualityOrder[nextIndex] else null
+    }
+
+    private fun extractLanguages(streams: List<StreamItem>) {
+        val langSet = mutableSetOf<String>()
+        streams.forEach { stream ->
+            val text = buildString {
+                append(stream.title ?: "")
+                append(" ")
+                append(stream.name ?: "")
+                append(" ")
+                append(stream.description ?: "")
+            }
+            val parsed = parser.parseMetadata(text)
+            langSet.addAll(parsed.langs)
+            if (parsed.hasHindi) langSet.add("Hindi")
+        }
+        // Prefer Hindi first, then English, then others
+        val sorted = langSet.sortedWith(compareBy<String> { 
+            when (it.lowercase()) {
+                "hindi" -> 0
+                "english" -> 1
+                else -> 2
+            }
+        }.thenBy { it })
+        _availableLanguages.value = sorted
+        // If current language is not in available list, switch to first available
+        if (_currentLanguage.value !in sorted && sorted.isNotEmpty()) {
+            _currentLanguage.value = sorted.first()
+            PlayerContext.currentLanguage = sorted.first()
+        }
+    }
+
+    // ── Auto‑play Next (Pre‑fetch) ──
+
+    private fun preFetchNextEpisode() {
+        if (currentMetaId.isBlank() || currentSeason == null || currentEpisode == null) return
+        val nextEpNum = currentEpisode!! + 1
+        preFetchJob?.cancel()
+        preFetchJob = viewModelScope.launch {
+            try {
+                val streams = getStreamsUseCase(
+                    metaId = currentMetaId,
+                    metaType = currentMetaType,
+                    season = currentSeason,
+                    episode = nextEpNum,
+                    quality = _currentQuality.value,
+                    language = _currentLanguage.value
+                )
+                if (streams.isNotEmpty()) {
+                    val verified = verifyStreams(streams)
+                    if (verified.isNotEmpty()) {
+                        nextEpisodePreFetched = verified.firstOrNull()
+                    }
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
+
+    private fun playNextEpisode() {
+        val nextStream = nextEpisodePreFetched
+        if (nextStream != null) {
+            val nextTitle = "${lastTitle} - Next Episode"
+            nextEpisodeListener?.invoke(nextStream, nextTitle)
+        } else {
+            // Fallback: fetch on demand
+            viewModelScope.launch {
+                if (currentMetaId.isBlank() || currentSeason == null || currentEpisode == null) return@launch
+                val nextEpNum = currentEpisode!! + 1
+                val streams = getStreamsUseCase(
+                    metaId = currentMetaId,
+                    metaType = currentMetaType,
+                    season = currentSeason,
+                    episode = nextEpNum,
+                    quality = _currentQuality.value,
+                    language = _currentLanguage.value
+                )
+                if (streams.isNotEmpty()) {
+                    val verified = verifyStreams(streams)
+                    if (verified.isNotEmpty()) {
+                        val nextTitle = "${lastTitle} - Next Episode"
+                        nextEpisodeListener?.invoke(verified.first(), nextTitle)
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Public controls ──
 
     fun playPause() {
         _player.value?.let { player ->
@@ -382,47 +705,24 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
         player.trackSelectionParameters = params
     }
 
-    fun selectQuality(quality: Quality) {
-        val player = _player.value ?: return
-        val tracks = player.currentTracks
-
-        for (groupIndex in tracks.groups.indices) {
-            val trackGroup = tracks.groups[groupIndex]
-            if (trackGroup.type == C.TRACK_TYPE_VIDEO) {
-                val targetHeight = quality.resolution?.removeSuffix("p")?.toIntOrNull() ?: 0
-                var bestIndex = 0
-                var bestDiff = Int.MAX_VALUE
-
-                for (trackIndex in 0 until trackGroup.length) {
-                    val format = trackGroup.getTrackFormat(trackIndex)
-                    val height = format.height ?: 0
-                    val diff = kotlin.math.abs(height - targetHeight)
-                    if (diff < bestDiff) {
-                        bestDiff = diff
-                        bestIndex = trackIndex
-                    }
-                }
-
-                val override = TrackSelectionOverride(
-                    trackGroup.mediaTrackGroup,
-                    listOf(bestIndex)
-                )
-                val params = player.trackSelectionParameters.buildUpon()
-                    .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-                    .setOverrideForType(override)
-                    .build()
-                player.trackSelectionParameters = params
-                return
-            }
-        }
-    }
-
     fun toggleLock() {
         _isLocked.value = !_isLocked.value
     }
 
     fun toggleFullscreen() {
         _isFullscreen.value = !_isFullscreen.value
+    }
+
+    fun retryPlayback() {
+        viewModelScope.launch {
+            _error.value = null
+            val context = lastContext ?: return@launch
+            if (lastStreams.isNotEmpty()) {
+                initializePlayer(context, lastStreams, lastTitle, lastSubtitle, currentMetaId, currentMetaType, currentSeason, currentEpisode)
+            } else {
+                _error.value = "No streams to retry"
+            }
+        }
     }
 
     fun releasePlayer() {
@@ -434,10 +734,9 @@ class PlayerViewModel @Inject constructor() : ViewModel() {
         _player.value?.release()
         _player.value = null
         playerListener = null
-
-        // ✅ MediaSession को रिलीज़ करें
         mediaSession?.release()
         mediaSession = null
+        preFetchJob?.cancel()
+        preFetchJob = null
     }
 }
-

@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ultrastream.app.data.models.HistoryItem
+import com.ultrastream.app.ui.theme.premiumGlass
 
 @Composable
 fun ContinueWatchingCard(
@@ -30,15 +31,17 @@ fun ContinueWatchingCard(
             .width(280.dp)
             .height(120.dp)
             .clip(RoundedCornerShape(16.dp)),
-        onClick = onClick
+        onClick = onClick,
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
-        Row(modifier = Modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxSize().premiumGlass(RoundedCornerShape(16.dp))) {
             AsyncImage(
                 model = history.poster,
                 contentDescription = history.name,
                 modifier = Modifier
-                    .width(75.dp)
-                    .fillMaxHeight(),
+                    .width(85.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
                 contentScale = ContentScale.Crop
             )
             Column(
@@ -50,15 +53,18 @@ fun ContinueWatchingCard(
                 Text(
                     text = history.name,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.White
                 )
                 Text(
-                    text = history.type,
+                    text = history.type.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontWeight = FontWeight.Bold
                 )
+                Spacer(modifier = Modifier.height(8.dp))
                 if (progressPercent > 0) {
                     Box(
                         modifier = Modifier

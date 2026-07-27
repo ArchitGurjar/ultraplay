@@ -26,5 +26,8 @@ interface WatchlistDao {
 
     @Query("DELETE FROM watchlist")
     suspend fun deleteAll()
+
+    @Query("SELECT COUNT(*) FROM watchlist")
+    suspend fun getAllCount(): Int
 }
 

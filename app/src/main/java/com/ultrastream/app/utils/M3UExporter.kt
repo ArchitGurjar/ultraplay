@@ -31,7 +31,7 @@ class M3UExporter(private val context: Context) {
         streams.forEach { stream ->
             val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
             if (url.isNullOrBlank()) return@forEach
-            if (url.startsWith("magnet:")) return@forEach
+            if (url.startsWith("magnet:", ignoreCase = true)) return@forEach
             val name = stream.title ?: stream.name ?: "Stream"
             sb.appendLine("#EXTINF:-1,${escapeM3UString(name)}")
             sb.appendLine(url)

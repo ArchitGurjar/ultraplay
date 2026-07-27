@@ -3,14 +3,15 @@ package com.ultrastream.app.ui.screens.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultrastream.app.data.dao.*
-import com.ultrastream.app.data.models.Profile
+import com.ultrastream.app.data.models.*
 import com.ultrastream.app.data.preferences.PreferencesManager
-import com.ultrastream.app.domain.usecase.BackupRestoreUseCase
+import com.squareup.moshi.Moshi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -21,9 +22,12 @@ class ProfileViewModel @Inject constructor(
     private val watchlistDao: WatchlistDao,
     private val historyDao: HistoryDao,
     private val watchProgressDao: WatchProgressDao,
+    private val watchedEpisodeDao: WatchedEpisodeDao,
     private val addonDao: AddonDao,
+    private val smartPlaylistDao: SmartPlaylistDao,
     private val profileDao: ProfileDao,
-    private val backupRestoreUseCase: BackupRestoreUseCase   // ✅ added
+    private val cachedMetaDao: CachedMetaDao,
+    private val moshi: Moshi
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -160,25 +164,82 @@ class ProfileViewModel @Inject constructor(
         watchlistDao.deleteAll()
         historyDao.deleteAll()
         watchProgressDao.deleteAll()
+        watchedEpisodeDao.deleteAll()
+        smartPlaylistDao.deleteAll()
         addonDao.deleteAll()
         profileDao.deleteAll()
         preferencesManager.clearAll()
         _uiState.value = ProfileUiState()
     }
 
-    // ==================== BACKUP / RESTORE ====================
-
-    suspend fun exportBackup(): String? {
+    suspend fun exportFullBackup(): String {
         return try {
-            backupRestoreUseCase.exportData()
+            val data = FullBackupData(
+                addons = addonDao.getAll(),
+                library = libraryDao.getAll(),
+                watchlist = watchlistDao.getAll(),
+                history = historyDao.getAll(),
+                progress = watchProgressDao.getAll(),
+                watchedEpisodes = watchedEpisodeDao.getAll(),
+                playlists = smartPlaylistDao.getAll(),
+                profiles = profileDao.getAll(),
+                cachedMeta = cachedMetaDao.getAll(),
+                settings = SettingsBackup(
+                    theme = preferencesManager.getTheme().first(),
+                    hindiPriority = preferencesManager.getHindiPriority().first(),
+                    autoPlayNext = preferencesManager.getAutoPlayNext().first(),
+                    parentalControl = preferencesManager.getParentalControl().first(),
+                    parentalRating = preferencesManager.getParentalRating().first(),
+                    subtitleLanguage = preferencesManager.getSubtitleLanguage().first(),
+                    debridKey = preferencesManager.getDebridKey().first(),
+                    debridProvider = preferencesManager.getDebridProvider().first()
+                )
+            )
+            moshi.adapter(FullBackupData::class.java).toJson(data)
         } catch (e: Exception) {
-            null
+            ""
         }
     }
 
-    suspend fun importBackup(json: String): Boolean {
+    suspend fun importFullBackup(json: String): Boolean {
         return try {
-            backupRestoreUseCase.importData(json)
+            val data = moshi.adapter(FullBackupData::class.java).fromJson(json) ?: return false
+            
+            // Clear existing
+            libraryDao.deleteAll()
+            watchlistDao.deleteAll()
+            historyDao.deleteAll()
+            watchProgressDao.deleteAll()
+            watchedEpisodeDao.deleteAll()
+            smartPlaylistDao.deleteAll()
+            addonDao.deleteAll()
+            profileDao.deleteAll()
+            cachedMetaDao.deleteAll()
+
+            // Insert new
+            libraryDao.insertAll(data.library)
+            watchlistDao.insertAll(data.watchlist)
+            historyDao.insertAll(data.history)
+            watchProgressDao.insertAll(data.progress)
+            watchedEpisodeDao.insertAll(data.watchedEpisodes)
+            smartPlaylistDao.insertAll(data.playlists)
+            addonDao.insertAll(data.addons)
+            profileDao.insertAll(data.profiles)
+            cachedMetaDao.insertAll(data.cachedMeta)
+
+            // Settings
+            preferencesManager.setTheme(data.settings.theme)
+            preferencesManager.setHindiPriority(data.settings.hindiPriority)
+            preferencesManager.setAutoPlayNext(data.settings.autoPlayNext)
+            preferencesManager.setParentalControl(data.settings.parentalControl)
+            preferencesManager.setParentalRating(data.settings.parentalRating)
+            preferencesManager.setSubtitleLanguage(data.settings.subtitleLanguage)
+            preferencesManager.setDebridKey(data.settings.debridKey)
+            preferencesManager.setDebridProvider(data.settings.debridProvider)
+
+            loadAnalytics()
+            loadProfiles()
+            true
         } catch (e: Exception) {
             false
         }
@@ -201,3 +262,4 @@ class ProfileViewModel @Inject constructor(
         val completionRate: Int = 0
     )
 }
+

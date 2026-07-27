@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -27,16 +28,17 @@ fun EpisodeCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(90.dp),
-        colors = CardDefaults.cardColors(containerColor = CardDark),
-        shape = RoundedCornerShape(16.dp),
+            .height(100.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        shape = RoundedCornerShape(20.dp),
         onClick = onClick
     ) {
-        Row(modifier = Modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxSize().premiumGlass(RoundedCornerShape(20.dp))) {
             Box(
                 modifier = Modifier
-                    .width(140.dp)
+                    .width(150.dp)
                     .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp))
             ) {
                 AsyncImage(
                     model = video.thumbnail,
@@ -47,12 +49,12 @@ fun EpisodeCard(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(6.dp)
-                        .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                        .padding(8.dp)
+                        .premiumGlass(RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = "S${video.season?.toString()?.padStart(2, '0') ?: "00"}E${video.episode?.toString()?.padStart(2, '0') ?: "00"}",
+                        text = "S${video.season ?: 0} E${video.episode ?: 0}",
                         color = Color.White,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold
@@ -63,8 +65,8 @@ fun EpisodeCard(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .height(2.dp)
-                            .background(Color.Gray.copy(alpha = 0.3f))
+                            .height(3.dp)
+                            .background(Color.White.copy(alpha = 0.2f))
                     ) {
                         Box(
                             modifier = Modifier
@@ -80,28 +82,32 @@ fun EpisodeCard(
                 modifier = Modifier
                     .fillMaxHeight()
                     .weight(1f)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
                     text = video.name ?: "Episode ${video.episode}",
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.White
                 )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = video.description?.take(80) ?: "",
+                    text = video.description ?: "No description available",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
+                    color = Color.White.copy(alpha = 0.6f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (isWatched) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "✔ Watched",
-                        color = AccentGreen,
+                        text = "WATCHED",
+                        color = AccentBlue,
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Black
                     )
                 }
             }

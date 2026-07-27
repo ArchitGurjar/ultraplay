@@ -73,6 +73,7 @@ class SearchUseCase @Inject constructor(
                                         runtime = meta.runtime,
                                         cast = meta.cast,
                                         imdbId = meta.imdb_id,
+                                        certification = meta.certification,
                                         videos = meta.videos?.map {
                                             Video(
                                                 season = it.season,
@@ -96,14 +97,67 @@ class SearchUseCase @Inject constructor(
             }
 
             val allResults = deferred.awaitAll().flatten()
-            val unique = allResults.distinctBy { it.id }
+            var finalResults = allResults.distinctBy { it.id }
+
+            // ✅ Search Fallback: If no results, try Cinemeta specifically
+            if (finalResults.isEmpty()) {
+                finalResults = fallbackSearch(query, types)
+            }
 
             when (sort) {
-                "rating" -> unique.sortedByDescending { it.imdbRating?.toDoubleOrNull() ?: 0.0 }
-                "year" -> unique.sortedByDescending { it.year?.toIntOrNull() ?: 0 }
-                else -> unique
+                "rating" -> finalResults.sortedByDescending { it.imdbRating?.toDoubleOrNull() ?: 0.0 }
+                "year" -> finalResults.sortedByDescending { it.year?.toIntOrNull() ?: 0 }
+                else -> finalResults
             }
         }
+    }
+
+    private suspend fun fallbackSearch(query: String, types: List<String>): List<MetaItem> {
+        val results = mutableListOf<MetaItem>()
+        val cinemetaBase = "https://v3-cinemeta.strem.io"
+        val encodedQuery = URLEncoder.encode(query, "UTF-8").replace("+", "%20")
+
+        for (type in types) {
+            val searchUrl = "$cinemetaBase/catalog/$type/top/search=$encodedQuery.json"
+            try {
+                val response = stremioApi.getCatalog(searchUrl)
+                response.metas?.forEach { meta ->
+                    results.add(
+                        MetaItem(
+                            id = meta.id,
+                            type = meta.type,
+                            name = meta.name,
+                            poster = meta.poster,
+                            background = meta.background,
+                            imdbRating = meta.imdbRating,
+                            year = meta.year,
+                            releaseInfo = meta.releaseInfo,
+                            released = meta.released,
+                            description = meta.description,
+                            genre = meta.genre,
+                            runtime = meta.runtime,
+                            cast = meta.cast,
+                            imdbId = meta.imdb_id,
+                            certification = meta.certification,
+                            videos = meta.videos?.map {
+                                Video(
+                                    season = it.season,
+                                    episode = it.episode,
+                                    name = it.name,
+                                    title = it.title,
+                                    description = it.description,
+                                    thumbnail = it.thumbnail,
+                                    url = it.url
+                                )
+                            }
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+        return results.distinctBy { it.id }
     }
 }
 

@@ -4,9 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultrastream.app.data.models.*
 import com.ultrastream.app.data.preferences.PreferencesManager
-import com.ultrastream.app.data.repository.AddonRepository
-import com.ultrastream.app.data.repository.MetaRepository
-import com.ultrastream.app.data.repository.StreamRepository
 import com.ultrastream.app.domain.usecase.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,28 +38,40 @@ class DetailsViewModel @Inject constructor(
     private val _selectedSeason = MutableStateFlow<Int?>(null)
     val selectedSeason: StateFlow<Int?> = _selectedSeason.asStateFlow()
 
-    private val _isAllSeasons = MutableStateFlow(false)
-    val isAllSeasons: StateFlow<Boolean> = _isAllSeasons.asStateFlow()
-
-    fun loadMeta(id: String, type: String) {
+    fun loadMetaIncremental(id: String, type: String) {
+        if (id.isBlank() || type.isBlank()) {
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                error = "Invalid ID or Type"
+            )
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val meta = getMetaUseCase(id, type)
-            if (meta != null) {
-                val inLibrary = manageLibraryUseCase.isInLibrary(id)
-                val inWatchlist = manageWatchlistUseCase.isInWatchlist(id)
+            try {
+                getMetaUseCase(id, type).collect { meta ->
+                    if (meta != null) {
+                        val inLibrary = manageLibraryUseCase.isInLibrary(id)
+                        val inWatchlist = manageWatchlistUseCase.isInWatchlist(id)
+                        _uiState.value = _uiState.value.copy(
+                            meta = meta,
+                            inLibrary = inLibrary,
+                            inWatchlist = inWatchlist,
+                            isLoading = false,
+                            error = null
+                        )
+                        filterAndSortEpisodes(meta.videos)
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = "Meta not found"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
-                    meta = meta,
-                    inLibrary = inLibrary,
-                    inWatchlist = inWatchlist,
                     isLoading = false,
-                    error = null
-                )
-                filterAndSortEpisodes(meta.videos)
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Meta not found"
+                    error = e.message ?: "Failed to load meta"
                 )
             }
         }
@@ -80,8 +89,13 @@ class DetailsViewModel @Inject constructor(
         episodes.forEach { ep ->
             if (ep.season == null || ep.episode == null) return@forEach
             if (ep.season == 0 || ep.episode == 0) return@forEach
+            
             val name = ep.name ?: ep.title ?: ""
+            val desc = ep.description ?: ""
+            if (name.isBlank() && desc.isBlank()) return@forEach
+            
             if (listOf(480, 720, 1080, 2160, 264, 265).contains(ep.episode) && name.isBlank()) return@forEach
+            
             val key = "S${ep.season}E${ep.episode}"
             if (seen.contains(key)) return@forEach
             seen.add(key)
@@ -93,33 +107,27 @@ class DetailsViewModel @Inject constructor(
         val seasons = all.mapNotNull { it.season }.distinct().sorted()
         _availableSeasons.value = seasons
         _filteredEpisodes.value = all
-        if (seasons.isNotEmpty() && _selectedSeason.value == null && !_isAllSeasons.value) {
+        if (seasons.isNotEmpty() && _selectedSeason.value == null) {
             _selectedSeason.value = seasons.first()
-        }
-        applySeasonFilter()
-    }
-
-    fun toggleAllSeasons() {
-        _isAllSeasons.value = !_isAllSeasons.value
-        if (_isAllSeasons.value) {
-            _selectedSeason.value = null
-        } else {
-            val seasons = _availableSeasons.value
-            if (seasons.isNotEmpty()) _selectedSeason.value = seasons.first()
         }
         applySeasonFilter()
     }
 
     fun selectSeason(season: Int?) {
         _selectedSeason.value = season
-        if (season != null) _isAllSeasons.value = false
+        _uiState.value = _uiState.value.copy(selectedSeason = season)
         applySeasonFilter()
+    }
+
+    fun selectEpisode(episode: Int) {
+        _uiState.value = _uiState.value.copy(selectedEpisode = episode)
+        loadStreamsForCurrentSelection()
     }
 
     private fun applySeasonFilter() {
         val all = _filteredEpisodes.value
         if (all.isEmpty()) return
-        val result = if (_isAllSeasons.value || _selectedSeason.value == null) {
+        val result = if (_selectedSeason.value == null) {
             all
         } else {
             all.filter { it.season == _selectedSeason.value }
@@ -132,25 +140,40 @@ class DetailsViewModel @Inject constructor(
         loadStreamsForCurrentSelection()
     }
 
-    fun selectEpisode(episode: Int) {
-        _uiState.value = _uiState.value.copy(selectedEpisode = episode)
-        loadStreamsForCurrentSelection()
-    }
-
     private fun loadStreamsForCurrentSelection() {
         val meta = _uiState.value.meta ?: return
-        loadStreams(meta.id, meta.type, _selectedSeason.value, _uiState.value.selectedEpisode)
+        loadStreamsIncremental(
+            meta.id,
+            meta.type,
+            _selectedSeason.value,
+            _uiState.value.selectedEpisode
+        )
     }
 
-    fun loadStreams(id: String, type: String, season: Int? = null, episode: Int? = null) {
+    fun loadStreamsIncremental(id: String, type: String, season: Int? = null, episode: Int? = null) {
+        if (id.isBlank() || type.isBlank()) {
+            _uiState.value = _uiState.value.copy(
+                streamsLoading = false,
+                streams = emptyList(),
+                error = "Invalid ID or Type"
+            )
+            return
+        }
+        
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(streamsLoading = true, streams = emptyList())
             try {
-                val streams = getStreamsUseCase(id, type, season, episode)
                 _uiState.value = _uiState.value.copy(
-                    streams = streams,
-                    streamsLoading = false
+                    streamsLoading = true,
+                    streams = emptyList(),
+                    error = null
                 )
+                
+                getStreamsUseCase(id, type, season, episode).collect { streams ->
+                    _uiState.value = _uiState.value.copy(
+                        streams = streams,
+                        streamsLoading = false
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     streams = emptyList(),
@@ -223,4 +246,3 @@ class DetailsViewModel @Inject constructor(
         val selectedEpisode: Int? = null
     )
 }
-

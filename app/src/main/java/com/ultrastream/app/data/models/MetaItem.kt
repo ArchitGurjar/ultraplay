@@ -53,7 +53,8 @@ data class HistoryItem(
 @Entity(tableName = "cached_meta")
 data class CachedMeta(
     @PrimaryKey val cacheKey: String,
-    val json: String
+    val json: String,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 data class MetaItem(
@@ -71,6 +72,7 @@ data class MetaItem(
     val runtime: String?,
     val cast: List<String>?,
     val imdbId: String?,
+    val certification: String? = null,
     val videos: List<Video>? = null
 )
 

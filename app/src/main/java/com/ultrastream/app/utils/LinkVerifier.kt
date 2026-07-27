@@ -1,5 +1,6 @@
 package com.ultrastream.app.utils
 
+import android.net.Uri
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -27,15 +28,36 @@ class LinkVerifier @Inject constructor(
         }
         val result = withContext(Dispatchers.IO) {
             try {
-                val request = Request.Builder()
+                // 1. Token Expiry Check
+                if (isTokenExpired(url)) return@withContext false
+
+                // 2. Try HEAD request
+                val headRequest = Request.Builder()
                     .url(url)
                     .head()
                     .addHeader("User-Agent", "UltraStream/1.0 (Android)")
                     .addHeader("Referer", "https://ultrastream.app/")
                     .build()
-                val response = okHttpClient.newCall(request).execute()
-                val isValid = response.code in 200..299
-                response.close()
+                
+                val headResponse = okHttpClient.newCall(headRequest).execute()
+                if (headResponse.isSuccessful) {
+                    headResponse.close()
+                    return@withContext true
+                }
+                headResponse.close()
+
+                // 3. Fallback to GET with Range: bytes=0-0 (Bandwidth Saver)
+                val rangeRequest = Request.Builder()
+                    .url(url)
+                    .get()
+                    .addHeader("Range", "bytes=0-0")
+                    .addHeader("User-Agent", "UltraStream/1.0 (Android)")
+                    .addHeader("Referer", "https://ultrastream.app/")
+                    .build()
+                
+                val rangeResponse = okHttpClient.newCall(rangeRequest).execute()
+                val isValid = rangeResponse.code == 206 || rangeResponse.code == 200
+                rangeResponse.close()
                 isValid
             } catch (e: Exception) {
                 false
@@ -43,6 +65,18 @@ class LinkVerifier @Inject constructor(
         }
         cache[url] = CacheEntry(result, System.currentTimeMillis())
         return result
+    }
+
+    private fun isTokenExpired(url: String): Boolean {
+        return try {
+            val uri = Uri.parse(url)
+            val expires = uri.getQueryParameter("expires")?.toLongOrNull()
+            if (expires != null) {
+                expires < System.currentTimeMillis() / 1000
+            } else false
+        } catch (e: Exception) {
+            false
+        }
     }
 }
 

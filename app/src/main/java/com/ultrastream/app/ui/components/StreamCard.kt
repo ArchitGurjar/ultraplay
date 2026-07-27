@@ -40,12 +40,29 @@ fun StreamCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = stream.addonName ?: "Addon",
-                    color = AccentBlue,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stream.addonName ?: "Addon",
+                        color = AccentBlue,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 13.sp
+                    )
+                    // Prominent Quality Badge
+                    val topQual = metadata.quals.firstOrNull() ?: "SD"
+                    Surface(
+                        color = Color.White.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                    ) {
+                        Text(
+                            text = topQual,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
                 if (metadata.isLive) {
                     Surface(
                         color = AccentRed.copy(alpha = 0.2f),
@@ -83,6 +100,12 @@ fun StreamCard(
                 }
                 if (metadata.seeds != null) {
                     Tag(text = metadata.seeds + " seeds", icon = Icons.Default.Group, color = AccentGreen)
+                }
+                if (metadata.parsedSeason != null && metadata.parsedEpisode != null) {
+                    Tag(text = "S${metadata.parsedSeason} E${metadata.parsedEpisode}", icon = Icons.Default.Tv, color = AccentBlue)
+                }
+                if (metadata.parsedYear != null) {
+                    Tag(text = metadata.parsedYear, icon = Icons.Default.Event, color = TextMuted)
                 }
                 metadata.quals.forEach { qual ->
                     when {

@@ -26,5 +26,8 @@ interface LibraryDao {
 
     @Query("DELETE FROM library")
     suspend fun deleteAll()
+
+    @Query("SELECT COUNT(*) FROM library")
+    suspend fun getAllCount(): Int
 }
 

@@ -22,21 +22,49 @@ fun SmartPlaylistDetailSheet(
     onDismiss: () -> Unit,
     onRetryMissing: () -> Unit,
     onManualPick: (PlaylistEpisode) -> Unit,
-    onPlayEpisode: (PlaylistEpisode) -> Unit
+    onPlayEpisode: (PlaylistEpisode) -> Unit,
+    onPlayAll: () -> Unit,
+    isLoading: Boolean = false
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "${playlist.metaName} - Season ${playlist.season}",
-                style = MaterialTheme.typography.headlineSmall
-            )
+            // Header with Play All button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${playlist.metaName} - Season ${playlist.season}",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                // ✅ Play All button with loading state
+                Button(
+                    onClick = onPlayAll,
+                    modifier = Modifier.height(40.dp),
+                    shape = MaterialTheme.shapes.small,
+                    enabled = !isLoading
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Play All")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Play All")
+                    }
+                }
+            }
+
+            // Progress info
             Text(
                 text = "Progress: ${playlist.fetched}/${playlist.total} - ${playlist.status}",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
+
+            // Retry Missing button (if episodes are missing)
             if (playlist.fetched < playlist.total) {
                 Button(
                     onClick = onRetryMissing,
@@ -46,6 +74,8 @@ fun SmartPlaylistDetailSheet(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
             }
+
+            // Episode list
             LazyColumn {
                 items(episodes) { episode ->
                     Row(
@@ -84,4 +114,3 @@ fun SmartPlaylistDetailSheet(
         }
     }
 }
-

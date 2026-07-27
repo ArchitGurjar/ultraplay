@@ -13,6 +13,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ultrastream.app.ui.components.FilterChipGroup
 import com.ultrastream.app.ui.components.PosterCard
+import com.ultrastream.app.utils.SearchQueryHolder
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun SearchScreen(
@@ -20,11 +24,23 @@ fun SearchScreen(
     onItemClick: (id: String, type: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(SearchQueryHolder.query) }
     var filter by remember { mutableStateOf("all") }
     var sort by remember { mutableStateOf("popular") }
 
-    // ✅ FIX: जब filter या sort change हो, तो search re-trigger करें
+    val scope = rememberCoroutineScope()
+    var searchJob by remember { mutableStateOf<Job?>(null) }
+
+    // Auto-search on first composition
+    LaunchedEffect(Unit) {
+        if (SearchQueryHolder.shouldAutoSearch && query.isNotBlank()) {
+            viewModel.search(query, filter, sort)
+            SearchQueryHolder.shouldAutoSearch = false
+            SearchQueryHolder.query = ""
+        }
+    }
+
+    // When filter or sort changes, trigger search with current query
     LaunchedEffect(filter, sort) {
         if (query.isNotBlank()) {
             viewModel.search(query, filter, sort)
@@ -38,12 +54,23 @@ fun SearchScreen(
     ) {
         OutlinedTextField(
             value = query,
-            onValueChange = {
-                query = it
-                viewModel.search(it, filter, sort)
+            onValueChange = { newQuery ->
+                query = newQuery
+                // Cancel previous job
+                searchJob?.cancel()
+                if (newQuery.length < 2) {
+                    viewModel.clearSearch()
+                    return@OutlinedTextField
+                }
+                // Debounce 600ms
+                searchJob = scope.launch {
+                    delay(600)
+                    viewModel.search(newQuery, filter, sort)
+                }
             },
             label = { Text("Search movies, series, anime, TV...") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
         Spacer(modifier = Modifier.height(8.dp))
         FilterChipGroup(
@@ -83,10 +110,10 @@ fun SearchScreen(
                         meta = item,
                         onClick = { onItemClick(item.id, item.type) },
                         modifier = Modifier.fillMaxWidth()
+                        // progress not shown on search results (web also doesn't)
                     )
                 }
             }
         }
     }
 }
-

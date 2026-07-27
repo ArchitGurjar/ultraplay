@@ -27,6 +27,9 @@ interface WatchProgressDao {
 
     @Query("DELETE FROM watch_progress")
     suspend fun deleteAll()
+
+    @Query("SELECT COUNT(*) FROM watch_progress")
+    suspend fun getAllCount(): Int
 }
 
 @Dao
@@ -48,5 +51,8 @@ interface WatchedEpisodeDao {
 
     @Query("DELETE FROM watched_episodes")
     suspend fun deleteAll()
+
+    @Query("SELECT COUNT(*) FROM watched_episodes")
+    suspend fun getAllCount(): Int
 }
 

@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ultrastream.app.data.models.MetaItem
@@ -24,18 +25,22 @@ import kotlinx.coroutines.launch
 fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
     onItemClick: (id: String, type: String) -> Unit,
-    onPlayStream: (StreamItem, String) -> Unit   // ✅ added parameter
+    onPlayStream: (List<StreamItem>, String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedPlaylist by remember { mutableStateOf<SmartPlaylist?>(null) }
     var showPlaylistDetail by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // ✅ Observe playStream and navigate
-    LaunchedEffect(uiState.playStream) {
+    // Observe playStream and playAllStreams to navigate to player
+    LaunchedEffect(uiState.playStream, uiState.playAllStreams) {
         uiState.playStream?.let { (stream, title) ->
-            onPlayStream(stream, title)
+            onPlayStream(listOf(stream), title)
             viewModel.clearPlayStream()
+        }
+        uiState.playAllStreams?.let { (streams, title) ->
+            onPlayStream(streams, title)
+            viewModel.clearPlayAllStreams()
         }
     }
 
@@ -54,7 +59,12 @@ fun LibraryScreen(
             item {
                 SectionHeader(title = "Smart Playlists")
                 if (uiState.smartPlaylists.isEmpty()) {
-                    Text("No smart playlists", modifier = Modifier.padding(horizontal = 16.dp))
+                    Text(
+                        "No smart playlists created",
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
                 } else {
                     HScrollRow {
                         uiState.smartPlaylists.forEach { playlist ->
@@ -80,7 +90,12 @@ fun LibraryScreen(
             item {
                 SectionHeader(title = "Library")
                 if (uiState.library.isEmpty()) {
-                    Text("No saved items", modifier = Modifier.padding(horizontal = 16.dp))
+                    Text(
+                        "Your saved items will appear here",
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
                 } else {
                     val metaItems = uiState.library.map { lib ->
                         MetaItem(
@@ -98,10 +113,11 @@ fun LibraryScreen(
                             runtime = lib.runtime,
                             cast = lib.cast?.split(","),
                             imdbId = lib.imdbId,
+                            certification = null,
                             videos = null
                         )
                     }
-                    GridSection(items = metaItems, onItemClick = onItemClick)
+                    GridSection(items = metaItems, onItemClick = onItemClick, progressMap = uiState.progressMap)
                 }
             }
 
@@ -109,7 +125,12 @@ fun LibraryScreen(
             item {
                 SectionHeader(title = "Watchlist")
                 if (uiState.watchlist.isEmpty()) {
-                    Text("No watchlist items", modifier = Modifier.padding(horizontal = 16.dp))
+                    Text(
+                        "Add items to your watchlist to track them",
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
                 } else {
                     val metaItems = uiState.watchlist.map { wl ->
                         MetaItem(
@@ -127,10 +148,11 @@ fun LibraryScreen(
                             runtime = wl.runtime,
                             cast = wl.cast?.split(","),
                             imdbId = wl.imdbId,
+                            certification = null,
                             videos = null
                         )
                     }
-                    GridSection(items = metaItems, onItemClick = onItemClick)
+                    GridSection(items = metaItems, onItemClick = onItemClick, progressMap = uiState.progressMap)
                 }
             }
 
@@ -138,7 +160,12 @@ fun LibraryScreen(
             item {
                 SectionHeader(title = "History")
                 if (uiState.history.isEmpty()) {
-                    Text("No history", modifier = Modifier.padding(horizontal = 16.dp))
+                    Text(
+                        "Your viewing history is currently empty",
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
                 } else {
                     val metaItems = uiState.history.map { hist ->
                         MetaItem(
@@ -156,10 +183,11 @@ fun LibraryScreen(
                             runtime = null,
                             cast = null,
                             imdbId = null,
+                            certification = null,
                             videos = null
                         )
                     }
-                    GridSection(items = metaItems, onItemClick = onItemClick)
+                    GridSection(items = metaItems, onItemClick = onItemClick, progressMap = uiState.progressMap)
                 }
             }
         }
@@ -189,8 +217,15 @@ fun LibraryScreen(
                     viewModel.playEpisode(episode)
                     showPlaylistDetail = false
                 }
-            }
+            },
+            // ✅ Play All callback
+            onPlayAll = {
+                scope.launch {
+                    viewModel.playAll(playlist)
+                    showPlaylistDetail = false
+                }
+            },
+            isLoading = uiState.isPlayAllLoading
         )
     }
 }
-

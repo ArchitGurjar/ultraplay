@@ -5,20 +5,23 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ultrastream.app.ui.components.AnalyticsCard
+import com.ultrastream.app.ui.theme.premiumGlass
 import kotlinx.coroutines.launch
-import java.io.InputStreamReader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,134 +30,100 @@ fun ProfileScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var expandedRating by remember { mutableStateOf(false) }
-    var expandedLanguage by remember { mutableStateOf(false) }
     var showNewProfileDialog by remember { mutableStateOf(false) }
     var newProfileName by remember { mutableStateOf("") }
     
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
 
-    // File picker for import backup
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val json = viewModel.exportFullBackup()
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        outputStream.write(json.toByteArray())
+                    }
+                    Toast.makeText(context, "✅ Backup exported!", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "❌ Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val reader = InputStreamReader(inputStream)
-                val json = reader.readText()
-                reader.close()
-                inputStream?.close()
-                scope.launch {
-                    val success = viewModel.importBackup(json)
+            scope.launch {
+                try {
+                    val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                    val success = viewModel.importFullBackup(json)
                     if (success) {
-                        Toast.makeText(context, "✅ Data restored successfully!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "✅ Data restored! Please restart the app.", Toast.LENGTH_LONG).show()
                     } else {
-                        Toast.makeText(context, "❌ Invalid backup file.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "❌ Restore failed: invalid file", Toast.LENGTH_SHORT).show()
                     }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "❌ Restore failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to read file: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(bottom = 100.dp, start = 16.dp, end = 16.dp, top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            Text("App Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
         }
 
         // Analytics Dashboard
         item {
-            Text("Analytics", style = MaterialTheme.typography.titleMedium)
+            Text("Viewing Statistics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                AnalyticsCard(label = "Watched", value = uiState.watchedCount.toString(), modifier = Modifier.weight(1f))
-                AnalyticsCard(label = "In Progress", value = uiState.inProgressCount.toString(), modifier = Modifier.weight(1f))
-                AnalyticsCard(label = "Library", value = uiState.libraryCount.toString(), modifier = Modifier.weight(1f))
+                AnalyticsCard(label = "WATCHED", value = uiState.watchedCount.toString(), modifier = Modifier.weight(1f))
+                AnalyticsCard(label = "PROGRESS", value = uiState.inProgressCount.toString(), modifier = Modifier.weight(1f))
+                AnalyticsCard(label = "LIBRARY", value = uiState.libraryCount.toString(), modifier = Modifier.weight(1f))
             }
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                AnalyticsCard(label = "Watchlist", value = uiState.watchlistCount.toString(), modifier = Modifier.weight(1f))
-                AnalyticsCard(label = "History", value = uiState.historyCount.toString(), modifier = Modifier.weight(1f))
-                AnalyticsCard(label = "Completion", value = uiState.completionRate.toString() + "%", modifier = Modifier.weight(1f))
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // Theme toggle
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Dark Theme")
-                Switch(
-                    checked = uiState.theme == "dark",
-                    onCheckedChange = { scope.launch { viewModel.toggleTheme() } }
-                )
+                AnalyticsCard(label = "WATCHLIST", value = uiState.watchlistCount.toString(), modifier = Modifier.weight(1f))
+                AnalyticsCard(label = "HISTORY", value = uiState.historyCount.toString(), modifier = Modifier.weight(1f))
+                AnalyticsCard(label = "COMPLETION", value = "${uiState.completionRate}%", modifier = Modifier.weight(1f))
             }
         }
 
-        // Hindi Priority
+        // Settings items with glassy look
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Card(
+                modifier = Modifier.fillMaxWidth().premiumGlass(RoundedCornerShape(20.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent)
             ) {
-                Text("Hindi Priority")
-                Switch(
-                    checked = uiState.hindiPriority,
-                    onCheckedChange = { scope.launch { viewModel.toggleHindiPriority() } }
-                )
-            }
-        }
-
-        // Auto-play Next
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Auto-play Next")
-                Switch(
-                    checked = uiState.autoPlayNext,
-                    onCheckedChange = { scope.launch { viewModel.toggleAutoPlayNext() } }
-                )
-            }
-        }
-
-        // Parental Control toggle
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Parental Control")
-                Switch(
-                    checked = uiState.parentalControl,
-                    onCheckedChange = { scope.launch { viewModel.toggleParentalControl() } }
-                )
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingToggle("Dark Experience", uiState.theme == "dark") { scope.launch { viewModel.toggleTheme() } }
+                    SettingToggle("Hindi Priority", uiState.hindiPriority) { scope.launch { viewModel.toggleHindiPriority() } }
+                    SettingToggle("Auto-play Next", uiState.autoPlayNext) { scope.launch { viewModel.toggleAutoPlayNext() } }
+                    SettingToggle("Parental Lock", uiState.parentalControl) { scope.launch { viewModel.toggleParentalControl() } }
+                }
             }
         }
 
         // Parental Rating dropdown
         item {
-            Text("Parental Rating", style = MaterialTheme.typography.titleMedium)
+            Text("Content Restrictions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             ExposedDropdownMenuBox(
                 expanded = expandedRating,
                 onExpandedChange = { expandedRating = !expandedRating }
@@ -163,9 +132,14 @@ fun ProfileScreen(
                     value = uiState.parentalRating,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Rating") },
+                    label = { Text("Parental Rating") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedRating) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor()
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f)
+                    )
                 )
                 ExposedDropdownMenu(
                     expanded = expandedRating,
@@ -182,141 +156,75 @@ fun ProfileScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Subtitle Language dropdown
-        item {
-            Text("Preferred Subtitle Language", style = MaterialTheme.typography.titleMedium)
-            ExposedDropdownMenuBox(
-                expanded = expandedLanguage,
-                onExpandedChange = { expandedLanguage = !expandedLanguage }
-            ) {
-                OutlinedTextField(
-                    value = uiState.subtitleLanguage,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Language") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedLanguage) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor()
-                )
-                ExposedDropdownMenu(
-                    expanded = expandedLanguage,
-                    onDismissRequest = { expandedLanguage = false }
-                ) {
-                    listOf("English", "Hindi", "Spanish", "French", "German", "Tamil", "Telugu", "Malayalam").forEach { lang ->
-                        DropdownMenuItem(
-                            text = { Text(lang) },
-                            onClick = {
-                                expandedLanguage = false
-                                scope.launch { viewModel.setSubtitleLanguage(lang) }
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
         }
 
         // Profile switching
         item {
-            Text("Profiles", style = MaterialTheme.typography.titleMedium)
-            if (uiState.profiles.isEmpty()) {
-                Text("No profiles found. Create one.", style = MaterialTheme.typography.bodySmall)
-            } else {
-                uiState.profiles.forEach { profile ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(profile.name, style = MaterialTheme.typography.bodyLarge)
-                        Row {
-                            if (profile.id == uiState.currentProfile) {
-                                Text("(Active)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                            } else {
-                                Button(
-                                    onClick = { scope.launch { viewModel.switchProfile(profile.id) } },
-                                    modifier = Modifier.width(80.dp)
-                                ) {
-                                    Text("Switch")
-                                }
-                                IconButton(
-                                    onClick = { scope.launch { viewModel.deleteProfile(profile.id) } }
-                                ) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+            Text("User Profiles", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Card(
+                modifier = Modifier.fillMaxWidth().premiumGlass(RoundedCornerShape(24.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    uiState.profiles.forEach { profile ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(profile.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (profile.id == uiState.currentProfile) {
+                                    Text("ACTIVE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                                } else {
+                                    TextButton(onClick = { scope.launch { viewModel.switchProfile(profile.id) } }) {
+                                        Text("SWITCH", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    }
+                                    IconButton(onClick = { scope.launch { viewModel.deleteProfile(profile.id) } }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.6f), modifier = Modifier.size(20.dp))
+                                    }
                                 }
                             }
                         }
                     }
+                    Button(
+                        onClick = { showNewProfileDialog = true },
+                        modifier = Modifier.fillMaxWidth().height(48.dp).premiumGlass(RoundedCornerShape(24.dp)),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text("Add New Profile", fontWeight = FontWeight.Bold)
+                    }
                 }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = { showNewProfileDialog = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Create New Profile")
             }
         }
 
-        // ==================== BACKUP / RESTORE ====================
+        // Data Management (Backup/Restore)
         item {
-            Text("Data Backup & Restore", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
+            Text("Data Management", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Export Backup
                 Button(
-                    onClick = {
-                        scope.launch {
-                            val json = viewModel.exportBackup()
-                            if (!json.isNullOrBlank()) {
-                                clipboard.setText(AnnotatedString(json))
-                                Toast.makeText(context, "✅ Backup JSON copied to clipboard!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "❌ Failed to generate backup.", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
+                    onClick = { exportLauncher.launch("ultrastream_backup.json") },
+                    modifier = Modifier.weight(1f).height(56.dp).premiumGlass(RoundedCornerShape(28.dp)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White)
                 ) {
-                    Text("Copy Backup")
+                    Icon(Icons.Default.FileDownload, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Backup")
                 }
-                // Import Backup from file
                 Button(
-                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
-                    modifier = Modifier.weight(1f)
+                    onClick = { importLauncher.launch(arrayOf("application/json")) },
+                    modifier = Modifier.weight(1f).height(56.dp).premiumGlass(RoundedCornerShape(28.dp)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White)
                 ) {
-                    Text("Restore from File")
+                    Icon(Icons.Default.FileUpload, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Restore")
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            OutlinedButton(
-                onClick = {
-                    scope.launch {
-                        val json = viewModel.exportBackup()
-                        if (!json.isNullOrBlank()) {
-                            // Share via intent
-                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "application/json"
-                                putExtra(android.content.Intent.EXTRA_TEXT, json)
-                            }
-                            context.startActivity(android.content.Intent.createChooser(intent, "Share Backup"))
-                        } else {
-                            Toast.makeText(context, "❌ Failed to generate backup.", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Share Backup (JSON)")
-            }
-            Spacer(modifier = Modifier.height(8.dp))
         }
 
         // Factory Reset
@@ -325,13 +233,14 @@ fun ProfileScreen(
                 onClick = {
                     scope.launch {
                         viewModel.factoryReset()
-                        Toast.makeText(context, "Factory reset performed", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "All data cleared", Toast.LENGTH_LONG).show()
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                modifier = Modifier.fillMaxWidth().height(56.dp).premiumGlass(RoundedCornerShape(28.dp), backgroundColor = Color.Red.copy(alpha = 0.1f)),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.Red),
+                shape = RoundedCornerShape(28.dp)
             ) {
-                Text("Factory Reset")
+                Text("Erase All Data", fontWeight = FontWeight.Black)
             }
         }
     }
@@ -340,13 +249,15 @@ fun ProfileScreen(
     if (showNewProfileDialog) {
         AlertDialog(
             onDismissRequest = { showNewProfileDialog = false },
-            title = { Text("Create Profile") },
+            containerColor = Color(0xFF1A1A1A),
+            title = { Text("Create Profile", color = Color.White) },
             text = {
                 OutlinedTextField(
                     value = newProfileName,
                     onValueChange = { newProfileName = it },
                     label = { Text("Profile Name") },
-                    singleLine = true
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
                 )
             },
             confirmButton = {
@@ -361,14 +272,29 @@ fun ProfileScreen(
                         }
                     }
                 ) {
-                    Text("Create")
+                    Text("CREATE", fontWeight = FontWeight.Black)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showNewProfileDialog = false }) {
-                    Text("Cancel")
+                    Text("CANCEL", color = Color.White.copy(alpha = 0.6f))
                 }
             }
+        )
+    }
+}
+
+@Composable
+fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = Color.White, fontWeight = FontWeight.Medium)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
         )
     }
 }

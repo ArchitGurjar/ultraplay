@@ -11,9 +11,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items as lazyColumnItems
-import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -38,22 +38,23 @@ import coil.compose.AsyncImage
 import com.ultrastream.app.data.models.StreamItem
 import com.ultrastream.app.data.models.Subtitle
 import com.ultrastream.app.ui.components.EpisodeCard
+import com.ultrastream.app.ui.components.ShimmerPlaceholder
 import com.ultrastream.app.ui.components.bottomsheets.SeasonsSheet
 import com.ultrastream.app.ui.components.bottomsheets.StreamsSheet
 import com.ultrastream.app.ui.components.bottomsheets.SubtitlesSheet
 import com.ultrastream.app.ui.theme.*
-import com.ultrastream.app.utils.M3UExporter
-import com.ultrastream.app.utils.SubtitleEvent
-import com.ultrastream.app.utils.SubtitleHolder
+import com.ultrastream.app.utils.*
 import kotlinx.coroutines.launch
 
 @Composable
 fun DetailsScreen(
     id: String,
     type: String,
+    autoPlayNext: Boolean = false,
     viewModel: DetailsViewModel = hiltViewModel(),
     onBack: () -> Unit,
-    onPlay: (stream: StreamItem, title: String) -> Unit
+    onPlay: (stream: StreamItem, title: String, next: NextEpisodeInfo?) -> Unit,
+    onCastClick: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -67,16 +68,16 @@ fun DetailsScreen(
     var selectedStream by remember { mutableStateOf<StreamItem?>(null) }
     var subtitlesList by remember { mutableStateOf<List<Subtitle>>(emptyList()) }
     var streamsRequested by remember { mutableStateOf(false) }
+    var isDescriptionExpanded by remember { mutableStateOf(false) }
 
     val meta = uiState.meta
     val filteredEpisodes by viewModel.filteredEpisodes.collectAsState()
     val availableSeasons by viewModel.availableSeasons.collectAsState()
     val selectedSeason by viewModel.selectedSeason.collectAsState()
-    val isAllSeasons by viewModel.isAllSeasons.collectAsState()
     val isSeries = meta?.type == "series" || meta?.type == "anime"
 
     LaunchedEffect(id, type) {
-        viewModel.loadMeta(id, type)
+        viewModel.loadMetaIncremental(id, type)
     }
 
     LaunchedEffect(meta) {
@@ -88,9 +89,16 @@ fun DetailsScreen(
         }
     }
 
-    LaunchedEffect(uiState.streamsLoading, streamsRequested) {
-        if (!uiState.streamsLoading && streamsRequested && uiState.streams.isNotEmpty()) {
+    // ✅ Auto‑play next if set
+    LaunchedEffect(Unit) {
+        val nextInfo = NextEpisodeHolder.consume()
+        if (nextInfo != null && meta != null) {
+            viewModel.selectSeason(nextInfo.season)
+            viewModel.selectEpisode(nextInfo.episode)
+            viewModel.loadStreamsIncremental(nextInfo.metaId, nextInfo.type, nextInfo.season, nextInfo.episode)
+            // Open streams sheet automatically
             showStreamsSheet = true
+            streamsRequested = true
         }
     }
 
@@ -131,8 +139,8 @@ fun DetailsScreen(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(50),
-                                color = Color.Black.copy(alpha = 0.6f),
-                                modifier = Modifier.size(44.dp)
+                                color = Color.Transparent,
+                                modifier = Modifier.size(44.dp).premiumGlass(RoundedCornerShape(50))
                             ) {
                                 IconButton(onClick = onBack) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
@@ -141,8 +149,8 @@ fun DetailsScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Surface(
                                     shape = RoundedCornerShape(50),
-                                    color = Color.Black.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(44.dp)
+                                    color = Color.Transparent,
+                                    modifier = Modifier.size(44.dp).premiumGlass(RoundedCornerShape(50))
                                 ) {
                                     IconButton(onClick = { viewModel.toggleWatchlist(meta) }) {
                                         Icon(
@@ -154,8 +162,8 @@ fun DetailsScreen(
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(50),
-                                    color = Color.Black.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(44.dp)
+                                    color = Color.Transparent,
+                                    modifier = Modifier.size(44.dp).premiumGlass(RoundedCornerShape(50))
                                 ) {
                                     IconButton(onClick = { viewModel.toggleLibrary(meta) }) {
                                         Icon(
@@ -176,8 +184,8 @@ fun DetailsScreen(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(50),
-                                color = Color.Black.copy(alpha = 0.5f),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                                color = Color.Transparent,
+                                modifier = Modifier.premiumGlass(RoundedCornerShape(50))
                             ) {
                                 Text(
                                     text = meta.type.uppercase(),
@@ -211,73 +219,150 @@ fun DetailsScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = meta.description ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextMuted,
-                                maxLines = 4,
-                                softWrap = true
-                            )
+
+                            // Expandable Description
+                            Column {
+                                Text(
+                                    text = meta.description ?: "",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextMuted,
+                                    maxLines = if (isDescriptionExpanded) Int.MAX_VALUE else 4,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if ((meta.description?.length ?: 0) > 200) {
+                                    TextButton(
+                                        onClick = { isDescriptionExpanded = !isDescriptionExpanded },
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isDescriptionExpanded) "Read less" else "Read more",
+                                            color = AccentBlue,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (meta.cast != null && meta.cast.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    meta.cast.take(8).forEach { actor ->
+                                        Surface(
+                                            shape = RoundedCornerShape(20.dp),
+                                            color = Color.Transparent,
+                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                                            modifier = Modifier.clickable { onCastClick(actor) }
+                                        ) {
+                                            Text(
+                                                text = actor,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // MOVIE ACTION BUTTON
                             if (!isSeries) {
                                 Button(
                                     onClick = {
-                                        viewModel.loadStreams(meta.id, meta.type, null, null)
-                                        streamsRequested = true
+                                        if (meta != null && meta.id.isNotBlank() && meta.type.isNotBlank()) {
+                                            showStreamsSheet = true
+                                            streamsRequested = true
+                                            viewModel.loadStreamsIncremental(meta.id, meta.type, null, null)
+                                        } else {
+                                            Toast.makeText(context, "Metadata not loaded", Toast.LENGTH_SHORT).show()
+                                        }
                                     },
-                                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                                    modifier = Modifier.fillMaxWidth().height(56.dp).premiumGlass(RoundedCornerShape(50)),
                                     shape = RoundedCornerShape(50),
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.Black)
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White)
                                 ) {
                                     Icon(Icons.Default.Satellite, contentDescription = null, modifier = Modifier.size(20.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(if (uiState.streamsLoading) "Loading Streams..." else "Find Streams", fontWeight = FontWeight.Bold)
+                                    Text(if (uiState.streamsLoading) "Scanning for streams..." else "Find Streams", fontWeight = FontWeight.Bold)
                                 }
                             }
 
-                            // External Links
-                            Column(modifier = Modifier.padding(top = 16.dp)) {
-                                OutlinedButton(
-                                    onClick = {
-                                        val imdbId = meta.imdbId
-                                        if (!imdbId.isNullOrBlank()) {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.imdb.com/title/$imdbId")))
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                                    shape = RoundedCornerShape(50),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-                                ) {
-                                    Icon(Icons.Default.Movie, contentDescription = null, tint = Color.White)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("View on IMDb", fontWeight = FontWeight.Bold, color = Color.White)
-                                }
-                                if (meta.videos?.any { it.url != null } == true) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    OutlinedButton(
-                                        onClick = {
-                                            val trailerUrl = meta.videos?.firstOrNull { it.url != null }?.url
-                                            if (!trailerUrl.isNullOrBlank()) {
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(trailerUrl)))
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                                        shape = RoundedCornerShape(50),
-                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                            // External Info Card (IMDb & Trailer)
+                            Card(
+                                modifier = Modifier.fillMaxWidth().premiumGlass(RoundedCornerShape(20.dp)),
+                                colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Watch Trailer", fontWeight = FontWeight.Bold, color = Color.White)
+                                        Column {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Star, contentDescription = null, tint = AccentGold, modifier = Modifier.size(20.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = meta.imdbRating ?: "N/A",
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Color.White
+                                                )
+                                                Text(
+                                                    text = "/10",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = TextMuted,
+                                                    modifier = Modifier.padding(top = 4.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = "IMDb Rating • ${meta.year ?: "N/A"}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = TextMuted
+                                            )
+                                        }
+                                        
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            IconButton(
+                                                onClick = {
+                                                    val imdbId = meta.imdbId
+                                                    if (!imdbId.isNullOrBlank()) {
+                                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.imdb.com/title/$imdbId")))
+                                                    }
+                                                },
+                                                modifier = Modifier.size(48.dp).background(Color.White.copy(alpha = 0.05f), CircleShape)
+                                            ) {
+                                                Icon(Icons.Default.OpenInNew, contentDescription = "Open IMDb", tint = Color.White, modifier = Modifier.size(20.dp))
+                                            }
+                                            if (meta.videos?.any { it.url != null } == true) {
+                                                IconButton(
+                                                    onClick = {
+                                                        val trailerUrl = meta.videos?.firstOrNull { it.url != null }?.url
+                                                        if (!trailerUrl.isNullOrBlank()) {
+                                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(trailerUrl)))
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(48.dp).background(Color.White.copy(alpha = 0.05f), CircleShape)
+                                                ) {
+                                                    Icon(Icons.Default.PlayCircle, contentDescription = "Watch Trailer", tint = AccentRed, modifier = Modifier.size(24.dp))
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(24.dp))
                         }
                     }
                 }
 
-                // Series Season Chips & Episodes
+                // Series Episodes
                 if (isSeries) {
                     item {
                         Row(
@@ -287,14 +372,9 @@ fun DetailsScreen(
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            FilterChip(
-                                selected = isAllSeasons,
-                                onClick = { viewModel.toggleAllSeasons() },
-                                label = { Text("All Seasons") }
-                            )
                             availableSeasons.forEach { season ->
                                 FilterChip(
-                                    selected = season == selectedSeason && !isAllSeasons,
+                                    selected = season == selectedSeason,
                                     onClick = { viewModel.selectSeasonAndLoad(season) },
                                     label = { Text("S$season") }
                                 )
@@ -302,31 +382,42 @@ fun DetailsScreen(
                         }
                     }
 
-                    item {
-                        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            filteredEpisodes.forEach { video ->
-                                val epNum = video.episode ?: 0
-                                val seasonNum = video.season ?: 0
-                                val isWatched = uiState.watchProgress?.percent?.let { it >= 100 } ?: false
-                                val progressPercent = uiState.watchProgress?.percent ?: 0
+                    if (uiState.isLoading && filteredEpisodes.isEmpty()) {
+                        items(5) {
+                            ShimmerPlaceholder(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().height(100.dp))
+                        }
+                    } else {
+                        items(
+                            count = filteredEpisodes.size,
+                            key = { index -> index }
+                        ) { index ->
+                            val video = filteredEpisodes[index]
+                            val epNum = video.episode ?: 0
+                            val seasonNum = video.season ?: 0
+                            val isWatched = uiState.watchProgress?.percent?.let { it >= 100 } ?: false
+                            val progressPercent = uiState.watchProgress?.percent ?: 0
 
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 EpisodeCard(
                                     video = video,
                                     isWatched = isWatched,
                                     progressPercent = progressPercent,
                                     onClick = {
                                         val currentMeta = uiState.meta
-                                        if (currentMeta != null) {
-                                            viewModel.selectEpisode(epNum)
-                                            viewModel.loadStreams(currentMeta.id, currentMeta.type, seasonNum, epNum)
+                                        if (currentMeta != null && currentMeta.id.isNotBlank() && currentMeta.type.isNotBlank()) {
+                                            showStreamsSheet = true
                                             streamsRequested = true
+                                            // ✅ Set both season and episode before loading streams
+                                            viewModel.selectSeason(seasonNum)
+                                            viewModel.selectEpisode(epNum)
+                                            viewModel.loadStreamsIncremental(currentMeta.id, currentMeta.type, seasonNum, epNum)
                                         } else {
                                             Toast.makeText(context, "Metadata not loaded", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
                 }
@@ -343,10 +434,23 @@ fun DetailsScreen(
         }
     }
 
-    // Streams Sheet
-    if (showStreamsSheet && uiState.streams.isNotEmpty()) {
+    // ── Streams Sheet ──
+    if (showStreamsSheet) {
         StreamsSheet(
             streams = uiState.streams,
+            isLoading = uiState.streamsLoading,
+            error = uiState.error,
+            onRetry = {
+                val meta = uiState.meta
+                if (meta != null) {
+                    viewModel.loadStreamsIncremental(
+                        meta.id,
+                        meta.type,
+                        uiState.selectedSeason,
+                        uiState.selectedEpisode
+                    )
+                }
+            },
             onDismiss = {
                 showStreamsSheet = false
                 streamsRequested = false
@@ -359,7 +463,7 @@ fun DetailsScreen(
         )
     }
 
-    // Action Sheet (Stream Actions)
+    // ── Action Sheet (Stream Actions) ──
     if (showActionSheet && selectedStream != null) {
         val stream = selectedStream!!
         val title = meta?.name ?: "Stream"
@@ -367,12 +471,28 @@ fun DetailsScreen(
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 Text("Stream Options", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
 
+                // Play Button
                 Button(
                     onClick = {
+                        val nextEp = filteredEpisodes.find { (it.episode ?: 0) > (uiState.selectedEpisode ?: 0) }
+                        val nextInfo: NextEpisodeInfo? = nextEp?.let { 
+                            NextEpisodeInfo(meta?.id ?: "", meta?.type ?: "", it.season ?: 0, it.episode ?: 0, "${meta?.name} - S${it.season}E${it.episode}")
+                        }
                         showActionSheet = false
                         viewModel.playStream(stream, title) { resolved, t ->
-                            // Subtitle will be handled separately via SubtitleHolder
-                            onPlay(resolved, t)
+                            // ✅ Set quality from the selected stream
+                            val parser = StreamParser()
+                            val quality = parser.extractQuality(resolved)
+                            if (quality != null) {
+                                PlayerContext.currentQuality = quality
+                            }
+                            PlayerContext.stream = resolved
+                            PlayerContext.title = t
+                            PlayerContext.metaId = meta?.id ?: ""
+                            PlayerContext.metaType = meta?.type ?: ""
+                            PlayerContext.season = uiState.selectedSeason
+                            PlayerContext.episode = uiState.selectedEpisode
+                            onPlay(resolved, t, nextInfo)
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -388,6 +508,7 @@ fun DetailsScreen(
 
                 val actions = mutableListOf<Pair<String, () -> Unit>>()
 
+                // ✅ Smart Playlist – only for series episodes when season/episode are selected
                 if (uiState.selectedEpisode != null && uiState.selectedSeason != null && isSeries && meta != null) {
                     actions.add("Make Smart Playlist" to {
                         scope.launch {
@@ -429,7 +550,14 @@ fun DetailsScreen(
                             Toast.makeText(context, "Magnet copied to clipboard", Toast.LENGTH_SHORT).show()
                         } else Toast.makeText(context, "No magnet link available", Toast.LENGTH_SHORT).show()
                     },
-                    "Export .m3u" to {
+                    "Copy Video URL" to {
+                        val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
+                        if (!url.isNullOrBlank()) {
+                            clipboard.setText(AnnotatedString(url))
+                            Toast.makeText(context, "URL copied to clipboard", Toast.LENGTH_SHORT).show()
+                        } else Toast.makeText(context, "No URL available", Toast.LENGTH_SHORT).show()
+                    },
+                    "Export / Play .m3u" to {
                         val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
                         if (!url.isNullOrBlank() && !url.startsWith("magnet:")) {
                             val exporter = M3UExporter(context)
@@ -461,7 +589,7 @@ fun DetailsScreen(
         }
     }
 
-    // Subtitles Sheet
+    // ── Subtitles Sheet ──
     if (showSubtitlesSheet && subtitlesList.isNotEmpty()) {
         SubtitlesSheet(
             subtitles = subtitlesList,
@@ -471,7 +599,11 @@ fun DetailsScreen(
                 SubtitleHolder.selectedSubtitle = sub
                 scope.launch { SubtitleEvent.emit(sub) }
                 if (selectedStream != null && meta != null) {
-                    onPlay(selectedStream!!, meta.name)
+                    val nextEp = filteredEpisodes.find { (it.episode ?: 0) > (uiState.selectedEpisode ?: 0) }
+                    val nextInfo: NextEpisodeInfo? = nextEp?.let { 
+                        NextEpisodeInfo(meta.id, meta.type, it.season ?: 0, it.episode ?: 0, "${meta.name} - S${it.season}E${it.episode}")
+                    }
+                    onPlay(selectedStream!!, meta.name, nextInfo)
                 } else {
                     Toast.makeText(context, "No stream to play with subtitle", Toast.LENGTH_SHORT).show()
                 }
@@ -479,7 +611,7 @@ fun DetailsScreen(
         )
     }
 
-    // Seasons Sheet
+    // ── Seasons Sheet ──
     if (showSeasonsSheet) {
         val seasons = meta?.videos?.mapNotNull { it.season }?.distinct()?.sorted() ?: emptyList()
         SeasonsSheet(
@@ -493,4 +625,3 @@ fun DetailsScreen(
         )
     }
 }
-

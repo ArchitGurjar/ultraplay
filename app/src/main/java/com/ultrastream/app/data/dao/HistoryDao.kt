@@ -26,5 +26,8 @@ interface HistoryDao {
 
     @Query("DELETE FROM history")
     suspend fun deleteAll()
+
+    @Query("SELECT COUNT(*) FROM history")
+    suspend fun getAllCount(): Int
 }
 

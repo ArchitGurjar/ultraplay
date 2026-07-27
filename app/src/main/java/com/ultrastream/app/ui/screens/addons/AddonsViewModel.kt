@@ -60,12 +60,15 @@ class AddonsViewModel @Inject constructor(
     }
 
     suspend fun installAddon(rawUrl: String): Boolean {
-        val addon = installAddonUseCase(rawUrl)
-        if (addon != null) {
-            loadAddons()
-            return true
+        return try {
+            val addon = installAddonUseCase(rawUrl)
+            if (addon != null) {
+                loadAddons()
+                true
+            } else false
+        } catch (e: Exception) {
+            false
         }
-        return false
     }
 
     suspend fun toggleAddon(id: String, enabled: Boolean) {

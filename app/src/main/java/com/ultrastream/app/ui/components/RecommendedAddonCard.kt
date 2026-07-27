@@ -12,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ultrastream.app.data.models.RecommendedAddon
+import com.ultrastream.app.ui.theme.premiumGlass
 
 @Composable
 fun RecommendedAddonCard(
@@ -21,44 +22,51 @@ fun RecommendedAddonCard(
 ) {
     Card(
         modifier = modifier
-            .width(200.dp)
-            .height(120.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+            .width(220.dp)
+            .height(130.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp),
+                .premiumGlass(RoundedCornerShape(20.dp))
+                .padding(16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = addon.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = addon.description,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column {
+                Text(
+                    text = addon.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.White
+                )
+                Text(
+                    text = addon.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+            }
             Button(
                 onClick = { onInstall(addon.url) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(50),
+                modifier = Modifier.fillMaxWidth().height(40.dp).premiumGlass(RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (addon.isInstalled) Color.Gray else MaterialTheme.colorScheme.primary,
-                    contentColor = if (addon.isInstalled) Color.White else MaterialTheme.colorScheme.onPrimary
+                    containerColor = Color.Transparent,
+                    contentColor = if (addon.isInstalled) Color.White.copy(alpha = 0.3f) else Color.White
                 ),
-                enabled = !addon.isInstalled
+                enabled = !addon.isInstalled,
+                contentPadding = PaddingValues(0.dp)
             ) {
-                Text(if (addon.isInstalled) "Installed" else "Install")
+                Text(
+                    text = if (addon.isInstalled) "INSTALLED" else "INSTALL",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Black
+                )
             }
         }
     }

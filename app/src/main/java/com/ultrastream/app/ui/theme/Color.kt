@@ -16,3 +16,7 @@ val AccentPurple = Color(0xFF8B5CF6)
 val TextMain = Color(0xFFFFFFFF)
 val TextMuted = Color(0xFFA3A3A3)
 
+val GlassWhite = Color(0x1AFFFFFF)
+val GlassBorder = Color(0x33FFFFFF)
+val GlassSelected = Color(0x4D38BDF8)
+

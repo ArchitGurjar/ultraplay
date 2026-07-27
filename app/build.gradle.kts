@@ -43,7 +43,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.4"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
     packagingOptions {
         resources {
@@ -63,6 +63,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.foundation:foundation-layout")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
@@ -96,9 +98,13 @@ dependencies {
     implementation("androidx.media3:media3-session:1.2.0") // ✅ नई डिपेंडेंसी
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.48")
-    kapt("com.google.dagger:hilt-compiler:2.48")
-    implementation("androidx.hilt:hilt-navigation-compose:1.0.0")
+    implementation("com.google.dagger:hilt-android:2.51.1")
+    kapt("com.google.dagger:hilt-compiler:2.51.1")
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+
+    // WorkManager
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
@@ -108,5 +114,47 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+tasks.register<Zip>("zipApk") {
+    dependsOn("packageDebug")
+    val srcFile = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+    from(srcFile.parentFile)
+    include(srcFile.name)
+    destinationDirectory.set(file("B:/ultraplay"))
+    archiveFileName.set("app-debug.zip")
+}
+
+tasks.register("copyApkToB") {
+    dependsOn("zipApk")
+    doLast {
+        val srcFile = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        if (srcFile.exists()) {
+            val destDir = file("B:/ultraplay")
+            if (!destDir.exists()) destDir.mkdirs()
+            srcFile.copyTo(File(destDir, "app-debug.apk"), overwrite = true)
+            println("APK and ZIP copied to B:/ultraplay")
+        }
+    }
+}
+
+tasks.whenTaskAdded {
+    if (name == "assembleDebug") {
+        finalizedBy("copyApkToB")
+    }
+}
+
+tasks.register<Zip>("zipProjectCode") {
+    from(rootProject.projectDir) {
+        exclude("**/build/**")
+        exclude("**/.gradle/**")
+        exclude("**/.idea/**")
+        exclude("**/apk/**")
+        exclude("**/.artifacts/**")
+        exclude("*.apk")
+        exclude("*.zip")
+    }
+    destinationDirectory.set(file("B:/ultraplay/apk"))
+    archiveFileName.set("ultraplaycode.zip")
 }
 

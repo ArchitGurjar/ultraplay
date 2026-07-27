@@ -7,7 +7,6 @@ import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.os.Build
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -49,14 +48,17 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun PlayerScreen(
-    stream: StreamItem,
+    streams: List<StreamItem>,
+    initialIndex: Int = 0,
     title: String = "Now Playing",
     viewModel: PlayerViewModel = hiltViewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onPlaybackEnded: () -> Unit = {},
+    onNextEpisode: (StreamItem, String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val activity = context.findActivity() // ✅ हमेशा सही Activity
+    val activity = context.findActivity()
     val lifecycleOwner = LocalLifecycleOwner.current
     val clipboard = LocalClipboardManager.current
 
@@ -71,17 +73,30 @@ fun PlayerScreen(
     val seekMessage by viewModel.seekMessage.collectAsState()
     val isLocked by viewModel.isLocked.collectAsState()
     val isFullscreen by viewModel.isFullscreen.collectAsState()
-    val availableQualities by viewModel.availableQualities.collectAsState()
-    val subtitleTracks by viewModel.subtitleTracks.collectAsState()
     val currentSpeed by viewModel.speed.collectAsState()
+    val isLoadingStreams by viewModel.isLoadingStreams.collectAsState()
+    val availableLanguages by viewModel.availableLanguages.collectAsState()
+    val currentQuality by viewModel.currentQuality.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
+    val availableQualitiesFromStreams by viewModel.availableQualitiesFromStreams.collectAsState()
 
     var showQualitySheet by remember { mutableStateOf(false) }
+    var showLanguageSheet by remember { mutableStateOf(false) }
     var showSubtitleSheet by remember { mutableStateOf(false) }
     var showSpeedSheet by remember { mutableStateOf(false) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
-    LaunchedEffect(stream) {
-        viewModel.initializePlayer(context, stream, title)
+    LaunchedEffect(Unit) {
+        viewModel.setNextEpisodeListener(onNextEpisode)
+        viewModel.events.collect { event ->
+            if (event is PlayerEvent.PlaybackEnded) {
+                onPlaybackEnded()
+            }
+        }
+    }
+
+    LaunchedEffect(streams) {
+        viewModel.initializePlayer(context, streams, title)
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -104,9 +119,29 @@ fun PlayerScreen(
         }
     }
 
+    // Reset orientation and system bars when leaving the player
     DisposableEffect(Unit) {
         onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.window?.let { window ->
+                WindowInsetsControllerCompat(window, view).show(WindowInsetsCompat.Type.systemBars())
+            }
             viewModel.releasePlayer()
+        }
+    }
+
+    LaunchedEffect(isFullscreen) {
+        if (isFullscreen) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            activity?.window?.let { window ->
+                WindowInsetsControllerCompat(window, view).hide(WindowInsetsCompat.Type.systemBars())
+                WindowInsetsControllerCompat(window, view).systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.window?.let { window ->
+                WindowInsetsControllerCompat(window, view).show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
@@ -123,17 +158,6 @@ fun PlayerScreen(
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val targetVol = (volume * maxVol).toInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
-    }
-
-    LaunchedEffect(isFullscreen) {
-        if (isFullscreen) {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            WindowInsetsControllerCompat(activity?.window!!, view).hide(WindowInsetsCompat.Type.systemBars())
-            WindowInsetsControllerCompat(activity?.window!!, view).systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            WindowInsetsControllerCompat(activity?.window!!, view).show(WindowInsetsCompat.Type.systemBars())
-        }
     }
 
     Box(
@@ -159,7 +183,27 @@ fun PlayerScreen(
             }
         )
 
-        if (!isLocked) {
+        // Loading overlay when switching quality/language
+        if (isLoadingStreams) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = AccentBlue)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Loading stream...",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+
+        if (!isLocked && !isLoadingStreams) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -239,16 +283,25 @@ fun PlayerScreen(
                             Icon(Icons.Default.PictureInPicture, contentDescription = "Picture in Picture", tint = Color.White)
                         }
                     }
-                    // Download / Open in external player
                     IconButton(
                         onClick = {
-                            val url = stream.url ?: stream.streamUrl ?: stream.externalUrl
-                            if (!url.isNullOrBlank()) {
-                                if (url.startsWith("magnet:")) {
+                            val currentPlayer = player ?: return@IconButton
+                            val currentItemIndex = currentPlayer.currentMediaItemIndex
+                            val currentStream = streams.getOrNull(currentItemIndex)
+                            val url = currentStream?.url ?: currentStream?.streamUrl ?: currentStream?.externalUrl ?: ""
+                            if (url.isNotBlank()) {
+                                if (url.startsWith("magnet:", ignoreCase = true)) {
                                     clipboard.setText(AnnotatedString(url))
                                     android.widget.Toast.makeText(context, "Magnet copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
                                 } else {
-                                    if (url.contains(".m3u8") || url.contains(".mpd")) { clipboard.setText(AnnotatedString(url)); android.widget.Toast.makeText(context, "HLS/DASH link copied", android.widget.Toast.LENGTH_SHORT).show() } else { activity?.let { PlayerHelper.openInExternalPlayer(it, url, title) } ?: run { android.widget.Toast.makeText(context, "Cannot open", android.widget.Toast.LENGTH_SHORT).show() } }
+                                    if (url.contains(".m3u8") || url.contains(".mpd")) {
+                                        clipboard.setText(AnnotatedString(url))
+                                        android.widget.Toast.makeText(context, "HLS/DASH link copied", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        activity?.let { PlayerHelper.openInExternalPlayer(it, url, playerTitle) } ?: run {
+                                            android.widget.Toast.makeText(context, "Cannot open", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -310,6 +363,30 @@ fun PlayerScreen(
                         fontSize = 14.sp
                     )
                 }
+                IconButton(onClick = { showQualitySheet = true }) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Hd, contentDescription = "Quality", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Text(
+                            text = currentQuality,
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                if (availableLanguages.isNotEmpty()) {
+                    IconButton(onClick = { showLanguageSheet = true }) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Translate, contentDescription = "Language", tint = Color.White, modifier = Modifier.size(20.dp))
+                            Text(
+                                text = currentLanguage.take(3),
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
                 IconButton(onClick = { viewModel.skipBackward() }) {
                     Icon(Icons.Default.Replay10, contentDescription = "Back 10s", tint = Color.White)
                 }
@@ -323,9 +400,6 @@ fun PlayerScreen(
                 }
                 IconButton(onClick = { viewModel.skipForward() }) {
                     Icon(Icons.Default.Forward10, contentDescription = "Forward 10s", tint = Color.White)
-                }
-                IconButton(onClick = { showQualitySheet = true }) {
-                    Icon(Icons.Default.Hd, contentDescription = "Quality", tint = Color.White)
                 }
                 IconButton(onClick = { showSubtitleSheet = true }) {
                     Icon(Icons.Default.ClosedCaption, contentDescription = "Subtitles", tint = Color.White)
@@ -343,28 +417,52 @@ fun PlayerScreen(
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                 ) {
-                    Text(
-                        text = "Error: $error",
+                    Column(
                         modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Error: $error",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = { viewModel.retryPlayback() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.onErrorContainer,
+                                contentColor = MaterialTheme.colorScheme.errorContainer
+                            )
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Retry")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Retry")
+                        }
+                    }
                 }
             }
         }
     }
 
+    // ── Bottom Sheets ──
+
+    // Quality Sheet
     if (showQualitySheet) {
         ModalBottomSheet(onDismissRequest = { showQualitySheet = false }) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Select Quality", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn {
-                    items(availableQualities) { quality ->
+                    items(availableQualitiesFromStreams) { quality ->
                         ListItem(
-                            headlineContent = { Text(quality.label) },
-                            supportingContent = { Text(quality.resolution ?: "") },
+                            headlineContent = { Text(quality) },
+                            leadingContent = {
+                                if (quality == currentQuality) {
+                                    Icon(Icons.Default.Check, contentDescription = "Selected", tint = AccentBlue)
+                                }
+                            },
                             modifier = Modifier.clickable {
-                                viewModel.selectQuality(quality)
+                                viewModel.changeQuality(quality)
                                 showQualitySheet = false
                             }
                         )
@@ -374,6 +472,33 @@ fun PlayerScreen(
         }
     }
 
+    // Language Sheet
+    if (showLanguageSheet && availableLanguages.isNotEmpty()) {
+        ModalBottomSheet(onDismissRequest = { showLanguageSheet = false }) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Select Language", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn {
+                    items(availableLanguages) { language ->
+                        ListItem(
+                            headlineContent = { Text(language) },
+                            leadingContent = {
+                                if (language == currentLanguage) {
+                                    Icon(Icons.Default.Check, contentDescription = "Selected", tint = AccentBlue)
+                                }
+                            },
+                            modifier = Modifier.clickable {
+                                viewModel.changeLanguage(language)
+                                showLanguageSheet = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Subtitle Sheet
     if (showSubtitleSheet) {
         ModalBottomSheet(onDismissRequest = { showSubtitleSheet = false }) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -389,6 +514,7 @@ fun PlayerScreen(
                             }
                         )
                     }
+                    val subtitleTracks by viewModel.subtitleTracks.collectAsState()
                     items(subtitleTracks) { track ->
                         ListItem(
                             headlineContent = { Text(track.label) },
@@ -404,6 +530,7 @@ fun PlayerScreen(
         }
     }
 
+    // Speed Sheet
     if (showSpeedSheet) {
         ModalBottomSheet(onDismissRequest = { showSpeedSheet = false }) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -438,4 +565,3 @@ private fun formatTime(millis: Long): String {
         "%d:%02d".format(minutes, secs)
     }
 }
-

@@ -11,6 +11,7 @@ import com.ultrastream.app.data.dao.HistoryDao
 import com.ultrastream.app.data.dao.LibraryDao
 import com.ultrastream.app.data.dao.SmartPlaylistDao
 import com.ultrastream.app.data.dao.WatchlistDao
+import com.ultrastream.app.data.dao.WatchProgressDao
 import com.ultrastream.app.data.models.*
 import com.ultrastream.app.data.preferences.PreferencesManager
 import com.ultrastream.app.data.repository.AddonRepository
@@ -32,6 +33,7 @@ class LibraryViewModel @Inject constructor(
     private val watchlistDao: WatchlistDao,
     private val historyDao: HistoryDao,
     private val smartPlaylistDao: SmartPlaylistDao,
+    private val watchProgressDao: WatchProgressDao,
     private val streamRepository: StreamRepository,
     private val addonRepository: AddonRepository,
     private val preferencesManager: PreferencesManager,
@@ -57,11 +59,13 @@ class LibraryViewModel @Inject constructor(
             val watchlist = watchlistDao.getAll()
             val history = historyDao.getAll()
             val smartPlaylists = smartPlaylistDao.getAll()
+            val progressMap = watchProgressDao.getAll().associate { it.id to it.percent }
             _uiState.value = _uiState.value.copy(
                 library = library,
                 watchlist = watchlist,
                 history = history,
                 smartPlaylists = smartPlaylists,
+                progressMap = progressMap,
                 isLoading = false
             )
         }
@@ -98,12 +102,19 @@ class LibraryViewModel @Inject constructor(
 
     fun playAll(playlist: SmartPlaylist) {
         viewModelScope.launch {
-            val episodes = parsePlaylistEpisodes(playlist)
-            val firstWorking = episodes.firstOrNull { it.stream != null }?.stream
-            if (firstWorking != null) {
-                _uiState.value = _uiState.value.copy(playStream = firstWorking to playlist.metaName)
-            } else {
-                Toast.makeText(context, "No playable streams", Toast.LENGTH_SHORT).show()
+            _uiState.value = _uiState.value.copy(isPlayAllLoading = true)
+            try {
+                val episodes = parsePlaylistEpisodes(playlist)
+                val allWorking = episodes.mapNotNull { it.stream }
+                if (allWorking.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(playAllStreams = allWorking to playlist.metaName)
+                } else {
+                    Toast.makeText(context, "No playable streams", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                _uiState.value = _uiState.value.copy(isPlayAllLoading = false)
             }
         }
     }
@@ -136,25 +147,32 @@ class LibraryViewModel @Inject constructor(
                 val season = playlist.season
                 val epNum = ep.epNum
 
-                val streams = streamRepository.getStreams(
-                    metaId = playlist.metaId,
-                    metaType = "series",
-                    season = season,
-                    episode = epNum,
-                    addonUrls = addonUrls,
-                    hindiPriority = hindiPriority,
-                    debridKey = debridKey.takeIf { it.isNotBlank() }
-                )
-
                 var bestWorkingStream: StreamItem? = null
-                for (stream in streams) {
-                    val sUrl = stream.url ?: stream.streamUrl ?: stream.externalUrl
-                    if (sUrl != null && !sUrl.startsWith("magnet:")) {
-                        if (linkVerifier.verifyLink(sUrl)) {
-                            bestWorkingStream = stream
-                            break
+
+                // ✅ Use Incremental Flow for faster repair
+                try {
+                    streamRepository.getStreamsFlow(
+                        metaId = playlist.metaId,
+                        metaType = "series",
+                        season = season,
+                        episode = epNum,
+                        addonUrls = addonUrls,
+                        hindiPriority = hindiPriority,
+                        debridKey = debridKey.takeIf { it.isNotBlank() }
+                    ).collect { addonStreams ->
+                        for (stream in addonStreams) {
+                            val sUrl = stream.url ?: stream.streamUrl ?: stream.externalUrl
+                            if (sUrl != null && !sUrl.startsWith("magnet:")) {
+                                if (linkVerifier.verifyLink(sUrl)) {
+                                    bestWorkingStream = stream
+                                    // Found a working one, can potentially stop here for this episode
+                                    throw Exception("FOUND") // Simple way to break flow collection
+                                }
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    if (e.message != "FOUND") throw e
                 }
 
                 updatedEpisodes[index] = updatedEpisodes[index].copy(
@@ -183,47 +201,52 @@ class LibraryViewModel @Inject constructor(
             val hindiPriority = preferencesManager.getHindiPriority().first()
             val debridKey = preferencesManager.getDebridKey().first()
 
-            val streams = streamRepository.getStreams(
-                metaId = playlist.metaId,
-                metaType = "series",
-                season = playlist.season,
-                episode = episode.epNum,
-                addonUrls = addonUrls,
-                hindiPriority = hindiPriority,
-                debridKey = debridKey.takeIf { it.isNotBlank() }
-            )
+            var selectedStream: StreamItem? = null
 
-            if (streams.isNotEmpty()) {
-                var selectedStream: StreamItem? = null
-                for (stream in streams) {
-                    val sUrl = stream.url ?: stream.streamUrl ?: stream.externalUrl
-                    if (sUrl != null && !sUrl.startsWith("magnet:")) {
-                        if (linkVerifier.verifyLink(sUrl)) {
-                            selectedStream = stream
-                            break
+            // ✅ Use Incremental Flow with Exact Match Filter
+            try {
+                streamRepository.getStreamsFlow(
+                    metaId = playlist.metaId,
+                    metaType = "series",
+                    season = playlist.season,
+                    episode = episode.epNum,
+                    addonUrls = addonUrls,
+                    hindiPriority = hindiPriority,
+                    debridKey = debridKey.takeIf { it.isNotBlank() }
+                ).collect { addonStreams ->
+                    for (stream in addonStreams) {
+                        val sUrl = stream.url ?: stream.streamUrl ?: stream.externalUrl
+                        if (sUrl != null && !sUrl.startsWith("magnet:")) {
+                            if (linkVerifier.verifyLink(sUrl)) {
+                                selectedStream = stream
+                                throw Exception("FOUND")
+                            }
                         }
                     }
                 }
-                if (selectedStream != null) {
-                    val episodes = parsePlaylistEpisodes(playlist).toMutableList()
-                    val index = episodes.indexOfFirst { it.epNum == episode.epNum }
-                    if (index != -1) {
-                        episodes[index] = episodes[index].copy(stream = selectedStream, isMissing = false)
-                        val newJson = episodeAdapter.toJson(episodes)
-                        smartPlaylistDao.updatePlaylist(
-                            id = playlist.id,
-                            fetched = episodes.count { !it.isMissing },
-                            status = if (episodes.none { it.isMissing }) "Ready" else "Partial",
-                            episodesJson = newJson
-                        )
-                        loadLibraryData()
-                        Toast.makeText(context, "Episode E${episode.epNum} updated manually", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    Toast.makeText(context, "No working stream found for manual pick", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                if (e.message != "FOUND") {
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            if (selectedStream != null) {
+                val episodes = parsePlaylistEpisodes(playlist).toMutableList()
+                val index = episodes.indexOfFirst { it.epNum == episode.epNum }
+                if (index != -1) {
+                    episodes[index] = episodes[index].copy(stream = selectedStream, isMissing = false)
+                    val newJson = episodeAdapter.toJson(episodes)
+                    smartPlaylistDao.updatePlaylist(
+                        id = playlist.id,
+                        fetched = episodes.count { !it.isMissing },
+                        status = if (episodes.none { it.isMissing }) "Ready" else "Partial",
+                        episodesJson = newJson
+                    )
+                    loadLibraryData()
+                    Toast.makeText(context, "Episode E${episode.epNum} updated manually", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                Toast.makeText(context, "No streams available for this episode", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "No working stream found for this episode", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -231,6 +254,11 @@ class LibraryViewModel @Inject constructor(
     fun clearPlayStream() {
         _uiState.value = _uiState.value.copy(playStream = null)
     }
+
+    fun clearPlayAllStreams() {
+        _uiState.value = _uiState.value.copy(playAllStreams = null)
+    }
+
     fun playEpisode(episode: PlaylistEpisode) {
         val stream = episode.stream
         if (stream != null) {
@@ -246,7 +274,9 @@ class LibraryViewModel @Inject constructor(
         val watchlist: List<WatchlistItem> = emptyList(),
         val history: List<HistoryItem> = emptyList(),
         val smartPlaylists: List<SmartPlaylist> = emptyList(),
-        val playStream: Pair<StreamItem, String>? = null
+        val progressMap: Map<String, Int> = emptyMap(),
+        val playStream: Pair<StreamItem, String>? = null,
+        val playAllStreams: Pair<List<StreamItem>, String>? = null,
+        val isPlayAllLoading: Boolean = false  // ✅ Added for loading state
     )
 }
-
