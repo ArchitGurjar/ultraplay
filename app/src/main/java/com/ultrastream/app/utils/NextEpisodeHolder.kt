@@ -1,16 +1,6 @@
 package com.ultrastream.app.utils
 
-/**
- * Holds information about the next episode to be played automatically
- * when the current episode ends.
- */
-data class NextEpisodeInfo(
-    val metaId: String,
-    val type: String,
-    val season: Int,
-    val episode: Int,
-    val title: String
-)
+import com.ultrastream.app.utils.StreamDataHolder.NextEpisodeInfo   // ✅ Import from StreamDataHolder
 
 object NextEpisodeHolder {
     private var _nextEpisode: NextEpisodeInfo? = null

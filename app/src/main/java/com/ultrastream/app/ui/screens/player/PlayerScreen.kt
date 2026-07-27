@@ -14,10 +14,13 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ListItem
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.Text
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -499,36 +502,39 @@ fun PlayerScreen(
     }
 
     // Subtitle Sheet
-    if (showSubtitleSheet) {
-        ModalBottomSheet(onDismissRequest = { showSubtitleSheet = false }) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Subtitles", style = MaterialTheme.typography.headlineSmall)
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyColumn {
-                    item {
-                        ListItem(
-                            headlineContent = { Text("Off") },
-                            modifier = Modifier.clickable {
-                                viewModel.disableSubtitles()
-                                showSubtitleSheet = false
-                            }
-                        )
-                    }
-                    val subtitleTracks by viewModel.subtitleTracks.collectAsState()
-                    items(subtitleTracks) { track ->
-                        ListItem(
-                            headlineContent = { Text(track.label) },
-                            supportingContent = { Text(track.language) },
-                            modifier = Modifier.clickable {
-                                viewModel.selectSubtitleTrack(track)
-                                showSubtitleSheet = false
-                            }
-                        )
-                    }
+    // Subtitle Sheet
+if (showSubtitleSheet) {
+    ModalBottomSheet(onDismissRequest = { showSubtitleSheet = false }) {
+        // ✅ Collect state outside LazyColumn
+        val subtitleTracks by viewModel.subtitleTracks.collectAsState()
+        
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Subtitles", style = MaterialTheme.typography.headlineSmall)
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyColumn {
+                item {
+                    ListItem(
+                        headlineContent = { Text("Off") },
+                        modifier = Modifier.clickable {
+                            viewModel.disableSubtitles()
+                            showSubtitleSheet = false
+                        }
+                    )
+                }
+                items(subtitleTracks) { track ->
+                    ListItem(
+                        headlineContent = { Text(track.label) },
+                        supportingContent = { Text(track.language) },
+                        modifier = Modifier.clickable {
+                            viewModel.selectSubtitleTrack(track)
+                            showSubtitleSheet = false
+                        }
+                    )
                 }
             }
         }
     }
+}
 
     // Speed Sheet
     if (showSpeedSheet) {

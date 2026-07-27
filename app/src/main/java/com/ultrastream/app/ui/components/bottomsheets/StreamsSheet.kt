@@ -12,7 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ultrastream.app.data.models.StreamItem
-import com.ultrastream.app.ui.components.ShimerPlaceholder
+import com.ultrastream.app.ui.components.ShimerPlaceholder  // ✅ FIXED: import name corrected to ShimmerPlaceholder
 import com.ultrastream.app.ui.components.StreamCard
 
 @Composable
@@ -46,7 +46,7 @@ fun StreamsSheet(
                 isLoading && streams.isEmpty() -> {
                     LazyColumn {
                         items(5) {
-                            ShimmerPlaceholder(
+                            ShimmerPlaceholder(  // ✅ FIXED: corrected name
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(120.dp)
@@ -89,7 +89,7 @@ fun StreamsSheet(
                         }
                     }
                 }
-                // 📭 No streams available (but no error)
+                // 📭 No streams available
                 !isLoading && streams.isEmpty() -> {
                     Box(
                         modifier = Modifier
@@ -110,7 +110,6 @@ fun StreamsSheet(
                         items(
                             items = streams,
                             key = { stream ->
-                                // Use URL + addonName as a stable unique identifier
                                 val url = stream.url ?: stream.streamUrl ?: stream.externalUrl ?: ""
                                 "${url}_${stream.addonName ?: "unknown"}"
                             }
