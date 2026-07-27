@@ -1,0 +1,29 @@
+name: AI Code Review Agent
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run AI Review Agent
+        uses: coderabbitai/ai-pr-reviewer@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.AI_API_KEY }} 
+        with:
+          system_message: |
+            You are a strict code reviewer. Enforce the following protocols:
+            1. Never allow direct commits to main. Ensure changes are from isolated feature branches (feature/...).
+            2. Reject any code-shrinking or dummy implementations (false, null stubs).
+            3. Ensure all missing imports and dependencies are fully defined.
+            4. Provide clean, production-ready code blocks without using shortcuts like "// ... rest of code".
